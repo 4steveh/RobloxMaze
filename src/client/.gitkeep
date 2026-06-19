@@ -1,0 +1,3 @@
+# Keeps src/client/ (mapped to StarterPlayer.StarterPlayerScripts) under version
+# control while it has no client scripts yet. Rojo ignores non-script files, so
+# this does not create any instance. Delete once a real *.client.luau lives here.

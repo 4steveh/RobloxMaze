@@ -1,0 +1,15 @@
+# StyLua formatting config — the single source of truth for code style.
+# Run `stylua .` before considering any change done (see CLAUDE.md).
+
+# Restrict the parser to the Luau dialect (formats .lua and .luau files).
+syntax = "Luau"
+column_width = 120
+line_endings = "Unix"
+indent_type = "Tabs"
+indent_width = 4
+quote_style = "AutoPreferDouble"
+call_parentheses = "Always"
+collapse_simple_statement = "Never"
+
+[sort_requires]
+enabled = false

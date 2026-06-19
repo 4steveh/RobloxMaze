@@ -1,0 +1,15 @@
+# Selene linter config.
+#
+# `std = "roblox"` makes Roblox globals (game, workspace, script, task, shared,
+# Instance, Enum, Vector3, CFrame, ...) known, so they do NOT raise false
+# `undefined_variable` errors.
+#
+# `roblox-std-source = "pinned"` reads the committed `roblox.yml` in this repo
+# rather than fetching the std over the network. Linting is then deterministic
+# and works OUT OF THE BOX with no network access (clean checkouts, CI).
+# Regenerate when you start using newly-added Roblox APIs, then commit it:
+#     selene generate-roblox-std    # writes roblox.yml next to this file
+#
+# Run `selene .` before considering any change done (see CLAUDE.md).
+std = "roblox"
+roblox-std-source = "pinned"

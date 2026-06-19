@@ -1,0 +1,28 @@
+# ── Rojo / Roblox build artifacts ──
+# The source of truth is the Luau in src/, never a built binary place/model.
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+# Rojo place lock files
+*.rbxl.lock
+*.rbxlx.lock
+
+# ── Language-server sourcemap (regenerated via `rojo sourcemap`) ──
+sourcemap.json
+
+# ── Editor / IDE folders ──
+.vscode/
+.idea/
+*.code-workspace
+
+# ── OS cruft ──
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── Logs / misc ──
+*.log
