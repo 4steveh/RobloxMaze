@@ -105,8 +105,38 @@ Config.HUD = table.freeze({
 	LockedShakeTime = 0.35, -- seconds total
 })
 
+-- Monster: the bunny (server-authoritative FSM stalker) --------------------------
+-- Speeds in studs/second (player default WalkSpeed is 16 -- ChaseSpeed exceeds it
+-- so you cannot outrun it; you must break line of sight). Angles in degrees,
+-- distances in studs, durations in seconds.
+Config.Monster = table.freeze({
+	PatrolSpeed = 10, -- WalkSpeed while patrolling / searching
+	ChaseSpeed = 21, -- WalkSpeed while chasing (faster than the player)
+
+	DetectRange = 50, -- max distance the bunny can see a player
+	DetectHalfAngle = 45, -- half the vision cone (so a 90-degree total cone)
+	EyeHeight = 2, -- studs above the rig's HRP that the line-of-sight ray starts from
+
+	LoseSightSeconds = 3, -- seconds of broken sight (behind a wall) before a chase drops to Search
+	SearchDuration = 6, -- seconds spent searching the last-seen area before giving up
+	SearchWanderRadius = 12, -- studs the bunny pokes around the last-seen point while searching
+
+	CatchRadius = 5, -- distance to a player that counts as a catch (instant)
+
+	RepathInterval = 0.4, -- seconds between PathfindingService recomputations during a chase
+	AgentRadius = 2, -- CreatePath agent radius (fits the corridors)
+	AgentHeight = 5, -- CreatePath agent height
+	WaypointReachedDistance = 4, -- studs: advance to the next path waypoint within this distance
+
+	PatrolMemory = 2, -- patrol nodes remembered as "recently visited" so it tours rather than ping-pongs
+	StallEpsilon = 0.5, -- studs: movement below this in a tick counts as "not moving"
+	StallTicks = 10, -- consecutive stalled ticks (with a target) that force a repath
+
+	BodySize = Vector3.new(2.5, 3.5, 2.5), -- placeholder rig body dimensions
+	BodyColor = Color3.fromRGB(220, 218, 225), -- placeholder rig tone (pale, faintly sickly)
+})
+
 -- Future sections (fill in as milestones land) ----------------------------------
--- Config.Monster = table.freeze({ ... })
 -- Config.Audio = table.freeze({ ... })
 
 return table.freeze(Config)

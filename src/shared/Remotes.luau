@@ -18,6 +18,7 @@ local Names = table.freeze({
 	KeyCollected = "KeyCollected", -- server -> client: a key was picked up (payload: new key count)
 	GameWon = "GameWon", -- server -> client: this player reached the exit with enough keys
 	ExitLocked = "ExitLocked", -- server -> client: at the exit without enough keys (brief feedback)
+	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught by a monster (play the jumpscare)
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
@@ -27,6 +28,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.KeyCollected,
 	Names.GameWon,
 	Names.ExitLocked,
+	Names.MonsterCaught,
 }
 
 local Remotes = {}

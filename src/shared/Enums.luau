@@ -11,10 +11,16 @@ Enums.GameState = table.freeze({
 	Won = "Won",
 })
 
--- Monster taxonomy (stub -- populated when monsters land).
-Enums.MonsterType = table.freeze({})
+-- Monster taxonomy.
+Enums.MonsterType = table.freeze({
+	Bunny = "Bunny",
+})
 
--- Monster behaviour states for the future FSM (stub -- populated when monsters land).
-Enums.MonsterState = table.freeze({})
+-- Monster behaviour states for the FSM.
+Enums.MonsterState = table.freeze({
+	Patrol = "Patrol", -- wandering patrol routes, scanning for players
+	Chase = "Chase", -- a player was detected; pursuing at chase speed
+	Search = "Search", -- lost sight; investigating the last-seen point before giving up
+})
 
 return table.freeze(Enums)
