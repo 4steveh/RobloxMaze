@@ -197,11 +197,43 @@ local function tickChase(state: FSMState, sensed: Sensed): TickResult
 	return { moveTarget = state.lastSeen, speed = Config.Monster.ChaseSpeed, caught = nil }
 end
 
+local function tickSearch(state: FSMState, sensed: Sensed): TickResult
+	-- Re-detection resumes the chase immediately.
+	local seen = nearestVisible(sensed)
+	if seen then
+		return beginChase(state, seen)
+	end
+
+	state.searchElapsed += sensed.dt
+	if state.searchElapsed >= Config.Monster.SearchDuration then
+		state.name = Enums.MonsterState.Patrol
+		state.patrolTarget = nil
+		state.targetUserId = nil
+		state.lastSeen = nil
+		state.searchTarget = nil
+		return { moveTarget = nil, speed = Config.Monster.PatrolSpeed, caught = nil }
+	end
+
+	-- Investigate: walk to the current search point; on arrival pick a new random
+	-- point within SearchWanderRadius of the last-seen position.
+	local anchor = state.lastSeen or sensed.rigPosition
+	if
+		state.searchTarget == nil
+		or flatDistance(sensed.rigPosition, state.searchTarget) < Config.Monster.WaypointReachedDistance
+	then
+		local angle = math.random() * math.pi * 2
+		local dist = math.random() * Config.Monster.SearchWanderRadius
+		state.searchTarget = anchor + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+	end
+	return { moveTarget = state.searchTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
+end
+
 function BunnyFSM.tick(state: FSMState, sensed: Sensed): TickResult
 	if state.name == Enums.MonsterState.Chase then
 		return tickChase(state, sensed)
+	elseif state.name == Enums.MonsterState.Search then
+		return tickSearch(state, sensed)
 	end
-	-- Search is added in the next task; until then it behaves like Patrol.
 	return tickPatrol(state, sensed)
 end
 
