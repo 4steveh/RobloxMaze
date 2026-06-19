@@ -93,6 +93,34 @@ local function nearestVisible(sensed: Sensed): PlayerSense?
 	return best
 end
 
+-- Nearest eligible player within CatchRadius of the rig, or nil. Catch is pure
+-- proximity (it is on top of you), independent of the vision cone.
+local function caughtPlayer(sensed: Sensed): Player?
+	local best, bestDist = nil, math.huge
+	for _, ps in sensed.players do
+		local d = flatDistance(ps.position, sensed.rigPosition)
+		if d <= Config.Monster.CatchRadius and d < bestDist then
+			best, bestDist = ps.player, d
+		end
+	end
+	return best
+end
+
+-- Is the player we are chasing still in the sensed set? Absence means it left the
+-- eligible set entirely (entered a SafeRoom, died, won, or left) -- not merely
+-- broke line of sight behind a wall (which keeps it sensed with visible = false).
+local function targetInSensed(state: FSMState, sensed: Sensed): boolean
+	if state.targetUserId == nil then
+		return false
+	end
+	for _, ps in sensed.players do
+		if ps.player.UserId == state.targetUserId then
+			return true
+		end
+	end
+	return false
+end
+
 function BunnyFSM.newState(): FSMState
 	return {
 		name = Enums.MonsterState.Patrol,
@@ -134,12 +162,46 @@ local function tickPatrol(state: FSMState, sensed: Sensed): TickResult
 	return { moveTarget = state.patrolTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
 end
 
-function BunnyFSM.tick(state: FSMState, sensed: Sensed): TickResult
-	if state.name == Enums.MonsterState.Patrol then
-		return tickPatrol(state, sensed)
+local function enterSearch(state: FSMState): TickResult
+	state.name = Enums.MonsterState.Search
+	state.searchElapsed = 0
+	state.searchTarget = state.lastSeen
+	return { moveTarget = state.searchTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
+end
+
+local function tickChase(state: FSMState, sensed: Sensed): TickResult
+	-- A catch ends everything this tick.
+	local caught = caughtPlayer(sensed)
+	if caught then
+		return { moveTarget = sensed.rigPosition, speed = Config.Monster.ChaseSpeed, caught = caught }
 	end
-	-- Chase and Search are added in later tasks; default to patrolling so the
-	-- function is total in the meantime.
+
+	-- Re-acquire / maintain the freshest visible target.
+	local seen = nearestVisible(sensed)
+	if seen then
+		state.targetUserId = seen.player.UserId
+		state.lastSeen = seen.position
+		state.timeSinceSeen = 0
+		return { moveTarget = seen.position, speed = Config.Monster.ChaseSpeed, caught = nil }
+	end
+
+	-- No one visible. If the chased target left the sensed set, give up immediately;
+	-- if it is merely behind a wall (still sensed), burn the grace window.
+	if not targetInSensed(state, sensed) then
+		return enterSearch(state)
+	end
+	state.timeSinceSeen += sensed.dt
+	if state.timeSinceSeen >= Config.Monster.LoseSightSeconds then
+		return enterSearch(state)
+	end
+	return { moveTarget = state.lastSeen, speed = Config.Monster.ChaseSpeed, caught = nil }
+end
+
+function BunnyFSM.tick(state: FSMState, sensed: Sensed): TickResult
+	if state.name == Enums.MonsterState.Chase then
+		return tickChase(state, sensed)
+	end
+	-- Search is added in the next task; until then it behaves like Patrol.
 	return tickPatrol(state, sensed)
 end
 
