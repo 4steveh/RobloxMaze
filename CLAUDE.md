@@ -42,7 +42,7 @@ commands below "just work" from the repo root.
 ## Everyday commands
 
 ```sh
-rojo serve                                   # serve to the Studio plugin (default :34872)
+rojo serve                                   # serve to the Studio plugin (this project: :34873 via servePort)
 rojo build --output build.rbxlx              # build a place file (gitignored)
 rojo sourcemap --include-non-scripts -o sourcemap.json   # refresh LSP sourcemap
 
