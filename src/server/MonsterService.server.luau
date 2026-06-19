@@ -8,11 +8,14 @@
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local Enums = require(ReplicatedStorage.Enums)
+local Attributes = require(ReplicatedStorage.Attributes)
+local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 
 local STATE_ATTRIBUTE = "State" -- on the rig model: current Enums.MonsterState (observability/testing)
 
@@ -66,6 +69,71 @@ local function createRig(spawnPart): Model
 	root:SetNetworkOwner(nil)
 	return rig
 end
+
+-- Raycast params reused each sense: ignore the rig and all player characters, so
+-- only world geometry (walls) can block line of sight.
+local function sightParams(rig: Model): RaycastParams
+	local filter = { rig }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(filter, player.Character)
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = filter
+	return params
+end
+
+-- Build the FSM's player list: every eligible living player with a visible flag.
+-- Eligible = living HRP, NOT in a SafeRoom, NOT won. (A brand-new player whose
+-- InSafeRoom/GameState attributes are still nil is intentionally treated as
+-- eligible -- not-safe / not-won.) Visible = within DetectRange of the root,
+-- inside the DetectHalfAngle cone, and unobstructed by walls.
+local function sensePlayers(rig: Model): { any }
+	local root = rig.PrimaryPart
+	local eyePos = root.Position + Vector3.new(0, Config.Monster.EyeHeight, 0)
+	local facing = root.CFrame.LookVector
+	local params = sightParams(rig)
+
+	local result = {}
+	for _, player in Players:GetPlayers() do
+		if player:GetAttribute(Attributes.InSafeRoom) == true then
+			continue
+		end
+		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
+			continue
+		end
+		local hrp = PlayerUtil.livingRootPart(player)
+		if not hrp then
+			continue
+		end
+
+		-- Range/cone from the root (consistent with the FSM's flat proximity).
+		local toPlayer = hrp.Position - root.Position
+		local distance = toPlayer.Magnitude
+		local visible = false
+		if distance <= Config.Monster.DetectRange and distance > 0 then
+			local angle = math.deg(math.acos(math.clamp(facing:Dot(toPlayer.Unit), -1, 1)))
+			if angle <= Config.Monster.DetectHalfAngle then
+				-- LoS ray from the raised eye to the player's HRP; hit == nil => clear.
+				local ray = hrp.Position - eyePos
+				local hit = Workspace:Raycast(eyePos, ray, params)
+				visible = hit == nil
+			end
+		end
+		table.insert(result, { player = player, position = hrp.Position, visible = visible })
+	end
+	return result
+end
+
+-- Debug seam (server-only) so the Task 7 playtest can call the real function.
+-- Not read by any game logic. shared[] is truly cross-script on the server
+-- (unlike _G which is per-environment); the test reads it via execute_luau Server.
+-- selene: allow(global_usage)
+_G.__MonsterSensePlayers = sensePlayers
+-- selene: allow(global_usage)
+shared.__MonsterSensePlayers = sensePlayers
 
 -- One bunny per MonsterSpawn marker (MVP expects one). Warn once if none exist.
 local warnedNoSpawn = false
