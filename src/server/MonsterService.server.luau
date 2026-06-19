@@ -9,6 +9,7 @@
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
 
 local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
@@ -90,6 +91,7 @@ end
 -- InSafeRoom/GameState attributes are still nil is intentionally treated as
 -- eligible -- not-safe / not-won.) Visible = within DetectRange of the root,
 -- inside the DetectHalfAngle cone, and unobstructed by walls.
+-- selene: allow(unused_variable)
 local function sensePlayers(rig: Model): { any }
 	local root = rig.PrimaryPart
 	local eyePos = root.Position + Vector3.new(0, Config.Monster.EyeHeight, 0)
@@ -127,13 +129,92 @@ local function sensePlayers(rig: Model): { any }
 	return result
 end
 
--- Debug seam (server-only) so the Task 7 playtest can call the real function.
--- Not read by any game logic. shared[] is truly cross-script on the server
--- (unlike _G which is per-environment); the test reads it via execute_luau Server.
--- selene: allow(global_usage)
-_G.__MonsterSensePlayers = sensePlayers
--- selene: allow(global_usage)
-shared.__MonsterSensePlayers = sensePlayers
+-- Per-rig movement: walks the Humanoid along a PathfindingService path toward a
+-- target, recomputing at most every RepathInterval (ComputeAsync yields). Detects
+-- stalls (wedged on a corner) and forces a repath, and falls back to steering
+-- straight at the target when no path is available.
+-- selene: allow(unused_variable)
+local function createMover(rig: Model)
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	local path = PathfindingService:CreatePath({
+		AgentRadius = Config.Monster.AgentRadius,
+		AgentHeight = Config.Monster.AgentHeight,
+		AgentCanJump = false,
+	})
+	local waypoints = {}
+	local waypointIndex = 1
+	local sinceRepath = math.huge -- force a path on the first update
+	local lastPos = nil
+	local stalledTicks = 0
+
+	local function repath(target: Vector3)
+		local root = rig.PrimaryPart
+		local ok = pcall(function()
+			path:ComputeAsync(root.Position, target)
+		end)
+		if ok and path.Status == Enum.PathStatus.Success then
+			waypoints = path:GetWaypoints()
+			waypointIndex = 1
+		else
+			waypoints = {} -- fall back to direct steering
+		end
+		sinceRepath = 0
+	end
+
+	local mover = {}
+	function mover.update(target: Vector3?, dt: number)
+		local root = rig.PrimaryPart
+		if not root then
+			return
+		end
+		if target == nil then
+			humanoid:MoveTo(root.Position) -- stand still at the current spot
+			lastPos = root.Position
+			stalledTicks = 0
+			return
+		end
+
+		-- Stall recovery: barely moving toward a real target -> force a repath.
+		if lastPos and (root.Position - lastPos).Magnitude < Config.Monster.StallEpsilon then
+			stalledTicks += 1
+		else
+			stalledTicks = 0
+		end
+		lastPos = root.Position
+		if stalledTicks >= Config.Monster.StallTicks then
+			sinceRepath = math.huge
+			stalledTicks = 0
+		end
+
+		sinceRepath += dt
+		if sinceRepath >= Config.Monster.RepathInterval then
+			repath(target)
+		end
+
+		if #waypoints == 0 then
+			humanoid:MoveTo(target) -- direct fallback
+			return
+		end
+		while waypointIndex <= #waypoints do
+			local wp = waypoints[waypointIndex].Position
+			if
+				(Vector3.new(wp.X, root.Position.Y, wp.Z) - root.Position).Magnitude
+				< Config.Monster.WaypointReachedDistance
+			then
+				waypointIndex += 1
+			else
+				break
+			end
+		end
+		if waypointIndex <= #waypoints then
+			humanoid:MoveTo(waypoints[waypointIndex].Position)
+		else
+			humanoid:MoveTo(target)
+		end
+	end
+
+	return mover
+end
 
 -- One bunny per MonsterSpawn marker (MVP expects one). Warn once if none exist.
 local warnedNoSpawn = false
