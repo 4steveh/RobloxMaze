@@ -17,12 +17,17 @@ local Discovery = require(ReplicatedStorage.Discovery)
 local Enums = require(ReplicatedStorage.Enums)
 local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
+local Remotes = require(ReplicatedStorage.Remotes)
+local BunnyFSM = require(script.Parent.BunnyFSM)
 
 local STATE_ATTRIBUTE = "State" -- on the rig model: current Enums.MonsterState (observability/testing)
 
 local monstersFolder = Instance.new("Folder")
 monstersFolder.Name = "Monsters"
 monstersFolder.Parent = Workspace
+
+Remotes.init()
+local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
 
 -- A VALID procedural Humanoid rig: a HumanoidRootPart body + a welded Head (a
 -- Humanoid needs a Head to be a living character) + a Humanoid with RequiresNeck
@@ -91,7 +96,6 @@ end
 -- InSafeRoom/GameState attributes are still nil is intentionally treated as
 -- eligible -- not-safe / not-won.) Visible = within DetectRange of the root,
 -- inside the DetectHalfAngle cone, and unobstructed by walls.
--- selene: allow(unused_variable)
 local function sensePlayers(rig: Model): { any }
 	local root = rig.PrimaryPart
 	local eyePos = root.Position + Vector3.new(0, Config.Monster.EyeHeight, 0)
@@ -133,7 +137,6 @@ end
 -- target, recomputing at most every RepathInterval (ComputeAsync yields). Detects
 -- stalls (wedged on a corner) and forces a repath, and falls back to steering
 -- straight at the target when no path is available.
--- selene: allow(unused_variable)
 local function createMover(rig: Model)
 	local humanoid = rig:FindFirstChildOfClass("Humanoid")
 	local path = PathfindingService:CreatePath({
@@ -216,7 +219,23 @@ local function createMover(rig: Model)
 	return mover
 end
 
--- One bunny per MonsterSpawn marker (MVP expects one). Warn once if none exist.
+local warnedNoPatrol = false
+local function patrolNodePositions(): { Vector3 }
+	local nodes = {}
+	for _, m in Discovery.getAll(Tags.PatrolPoint) do
+		if m:IsA("BasePart") then
+			table.insert(nodes, m.Position)
+		end
+	end
+	if #nodes == 0 and not warnedNoPatrol then
+		warnedNoPatrol = true
+		warn("[MonsterService] No PatrolPoint markers found; the bunny will idle near its spawn.")
+	end
+	return nodes
+end
+
+local instances = {} -- { { rig = Model, state = FSMState, mover = Mover } }
+
 local warnedNoSpawn = false
 local function spawnBunnies()
 	local spawns = Discovery.getAll(Tags.MonsterSpawn)
@@ -229,9 +248,54 @@ local function spawnBunnies()
 	end
 	for _, spawnPart in spawns do
 		if spawnPart:IsA("BasePart") then
-			createRig(spawnPart)
+			local rig = createRig(spawnPart)
+			table.insert(instances, { rig = rig, state = BunnyFSM.newState(), mover = createMover(rig) })
 		end
 	end
 end
 
+-- A catch reuses the hardened death/respawn: kill the player and cue the client
+-- jumpscare. SpawnService handles RespawnDelay -> respawn at the checkpoint.
+local function catch(player: Player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health > 0 then
+		humanoid.Health = 0
+		caughtRemote:FireClient(player)
+	end
+end
+
 spawnBunnies()
+
+-- Server-authoritative tick on the shared poll cadence (never Touched). dt comes
+-- from os.clock deltas so FSM timers stay accurate even when ComputeAsync yields.
+local lastClock = os.clock()
+while true do
+	task.wait(Config.Spatial.PollInterval)
+	local now = os.clock()
+	local dt = now - lastClock
+	lastClock = now
+	local nodes = patrolNodePositions()
+	for _, inst in instances do
+		local rig = inst.rig
+		local root = rig.PrimaryPart
+		if root and rig.Parent then
+			local sensed = {
+				dt = dt,
+				rigPosition = root.Position,
+				patrolNodes = nodes,
+				players = sensePlayers(rig),
+			}
+			local result = BunnyFSM.tick(inst.state, sensed)
+			local humanoid = rig:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = result.speed
+			end
+			inst.mover.update(result.moveTarget, dt)
+			rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
+			if result.caught then
+				catch(result.caught)
+			end
+		end
+	end
+end
