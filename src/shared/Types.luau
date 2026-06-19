@@ -13,7 +13,7 @@ export type GameState = "Playing" | "Won"
 export type PlayerState = {
 	keys: number, -- keys currently held
 	state: GameState, -- whether this player is still Playing or has Won
-	checkpoint: Vector3?, -- last PlayerStart reached (nil until the first checkpoint)
+	checkpoint: CFrame?, -- CFrame of the last SafeRoom entered (nil until the first checkpoint)
 }
 
 return Types

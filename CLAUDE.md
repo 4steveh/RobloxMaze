@@ -162,7 +162,7 @@ File-extension → instance-class rules (Rojo):
 | ------ | ---- | ---- |
 | `GameBootstrap` | server | Skeleton sanity check: prints discovered marker counts on start. |
 | `SafeRoomService` | server | Authority on "is this player safe" + their checkpoint. Polls each living HRP against `SafeRoom` parts with `Spatial`, fires `SafeRoomEntered`/`SafeRoomLeft`, and writes the `Checkpoint` attribute. |
-| `SpawnService` | server | Single owner of spawn placement. On every `CharacterAdded`, places the character at the `Checkpoint` attribute, else a `PlayerStart` marker. |
+| `SpawnService` | server | Single owner of the character lifecycle. Sets `Players.CharacterAutoLoads = false` and calls `LoadCharacter` itself. Gives each player a personal hidden `SpawnLocation` (their `RespawnLocation`, `Duration = 0` so no forcefield), moves it to the `Checkpoint` attribute, else a `PlayerStart` marker, and only then loads — so the character spawns deterministically *on* the pad with no origin flash, no Heartbeat reassert. On `Humanoid.Died` it waits `Config.Respawn.RespawnDelay`, then respawns the same way. |
 | `KeyService` | server | Spawns the round's keys at a random subset of `KeySpot` markers; detects pickups by `Spatial.withinRange`; tracks each player's `KeyCount` (survives respawn); fires `KeyCollected`. |
 | `ExitService` | server | Win check: at an `ExitDoor` with enough keys → sets `GameState=Won`, freezes the player, fires `GameWon`; at the door without enough → one-shot `ExitLocked`. |
 | `KillBrickService` | server | **Temporary test tool.** A part tagged `KillBrick` kills whoever touches it — the lone sanctioned `Touched` handler, for testing death/respawn. Delete the brick (and eventually this file) when done. |

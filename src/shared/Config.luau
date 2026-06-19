@@ -56,7 +56,8 @@ Config.Spatial = table.freeze({
 Config.Respawn = table.freeze({
 	AtCheckpoint = true, -- respawn at the last SafeRoom checkpoint (vs. always the PlayerStart marker)
 	KeepKeysOnDeath = true, -- keep collected keys through death
-	SpawnUpOffset = 5, -- studs lifted above a spawn/checkpoint marker so the character clears the floor
+	SpawnUpOffset = 5, -- studs the player's hidden SpawnLocation sits above its marker, so the character spawns clear of the floor
+	RespawnDelay = 3, -- seconds between death and respawn (also the window for the upcoming death/jumpscare beat)
 })
 
 -- Win ---------------------------------------------------------------------------
