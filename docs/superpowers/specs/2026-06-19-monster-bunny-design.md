@@ -40,11 +40,15 @@ Decided during brainstorming:
 ### SafeRoom sanctuary rule
 
 SafeRooms are refuges during a hunt. **Detection skips any player whose `InSafeRoom`
-attribute is `true`** (that attribute already exists, server-set by `SafeRoomService`).
-Diving into a SafeRoom mid-chase makes the bunny instantly lose its target → Search →
-Patrol. For the MVP we do **not** add navmesh no-go zones: the bunny may physically wander
-into a SafeRoom but cannot see or catch a player there, and leaves once it has no target.
-Barring it from SafeRoom volumes entirely is deferred.
+attribute is `true`** (that attribute already exists, server-set by `SafeRoomService`) —
+such a player is removed from the bunny's sensed set entirely. Because the chased target
+then *vanishes from the sensed set* (as opposed to merely going out of sight behind a wall,
+where it is still sensed with `visible = false`), the bunny **drops to Search immediately**
+— no grace window. That is the difference that makes a SafeRoom an instant sanctuary while
+rounding a corner only buys you the `LoseSightSeconds` grace. For the MVP we do **not** add
+navmesh no-go zones: the bunny may physically wander into a SafeRoom but cannot see or catch
+a player there, and leaves once it has no target. Barring it from SafeRoom volumes entirely
+is deferred.
 
 ---
 
@@ -106,10 +110,14 @@ plays the local jumpscare effect.
 
 ### The rig (procedural placeholder — no art assets)
 
-- A `Model` with `HumanoidRootPart` + `Humanoid` + a simple colored body part, moved along
-  `PathfindingService` waypoints via `Humanoid:MoveTo`.
-- Carries its current FSM `State` (and, for observability, last-seen position and current
-  target) as **attributes**, purely so the playtest can read what it is doing.
+- A **valid** procedural `Humanoid` rig — the minimum that actually walks: a `HumanoidRootPart`
+  body part, a welded `Head` part, and a `Humanoid` with `RequiresNeck = false` and an explicit
+  `HipHeight` (a bare 1-part rig with no `Head`/`HipHeight` spawns dead and won't `MoveTo`). It
+  is moved along `PathfindingService` waypoints via `Humanoid:MoveTo`, and its `PrimaryPart`
+  network ownership is pinned to the server (`SetNetworkOwner(nil)`) so server-driven movement
+  isn't handed to a client. No art assets — `Config.Monster.Body*` placeholders, swapped later.
+- Carries its current FSM `State` as an **attribute**, purely so the playtest can read what it
+  is doing.
 
 ---
 
@@ -117,15 +125,18 @@ plays the local jumpscare effect.
 
 States map to `Enums.MonsterState.{Patrol, Chase, Search}`. Ticked each poll interval.
 
-- **Patrol** — pathfinds between `PatrolPoint` nodes; on reaching one it picks the **nearest
-  other** `PatrolPoint` as the next target (a stable, emergent route needing no explicit
-  ordering). Runs detection against each living player every tick. Any detected → **Chase**
+- **Patrol** — pathfinds between `PatrolPoint` nodes; on reaching one it picks the nearest
+  node it has **not** visited in the last `PatrolMemory` hops (falling back to the nearest
+  other node if all are recent), so it tours the maze instead of ping-ponging between two
+  points. Runs detection against each living player every tick. Any detected → **Chase**
   (target = closest detected player).
 - **Chase** — while the target is in sight, paths to the player's *live* position at
   `ChaseSpeed`. Each tick re-checks sight and catch range:
   - within `CatchRadius` of the target → **catch** (see §8);
-  - sight broken → keep heading to the **last-seen position**; if sight stays broken for
-    `LoseSightSeconds` → **Search**.
+  - target **gone from the sensed set** (entered a SafeRoom, died, won, or left) →
+    **Search immediately** (no grace);
+  - target still sensed but **not visible** (behind a wall) → keep heading to the
+    **last-seen position**; if it stays broken for `LoseSightSeconds` → **Search**.
 - **Search** — moves to the last-seen position, then wanders/looks around within
   `SearchWanderRadius` for `SearchDuration`. Re-detects a player → **Chase**; timer expires →
   **Patrol** (resume nearest node).
@@ -206,6 +217,9 @@ Indicative starting values (all tunable), grounded in the player default `WalkSp
 | `AgentRadius` | 2 | `CreatePath` agent radius (fit corridors) |
 | `AgentHeight` | 5 | `CreatePath` agent height |
 | `WaypointReachedDistance` | 4 | studs: advance to the next path waypoint |
+| `PatrolMemory` | 2 | patrol nodes remembered as "recently visited" (so it tours, not ping-pongs) |
+| `StallEpsilon` | 0.5 | studs: movement below this per tick counts as "not moving" |
+| `StallTicks` | 10 | consecutive stalled ticks (with a target) that force a repath |
 | `BodySize` | `Vector3.new(2.5, 3.5, 2.5)` | placeholder rig body dimensions, studs |
 | `BodyColor` | `Color3.fromRGB(220, 218, 225)` | placeholder rig tone (pale, faintly sickly) |
 
@@ -223,10 +237,13 @@ Mirrors the warn-once discipline already in `SpawnService`:
 - **`PathfindingService` failure / no path** (target in an unreachable nook) → fall back to
   steering directly toward the target for that tick; retry on the next repath; never error the
   tick loop.
-- **Target dies / respawns / leaves mid-chase** → drop the target → Search (if a last-seen
-  exists) or Patrol.
-- **Target enters a SafeRoom or wins** → treated as sight lost (skipped by detection).
-- **Rig stalls** (no movement over several ticks) → force a repath.
+- **Target dies / respawns / leaves / wins / enters a SafeRoom mid-chase** → it drops out of
+  the sensed set, so the bunny gives up **immediately** → Search → Patrol. This is distinct
+  from breaking line of sight behind a wall (target still sensed, `visible = false`), which
+  only burns the `LoseSightSeconds` grace. New `InSafeRoom`/`GameState` attributes that are
+  `nil` for a brand-new player are intentionally treated as eligible (not-safe / not-won).
+- **Rig stalls** (moves < `StallEpsilon` for `StallTicks` consecutive ticks while it has a
+  movement target) → force a repath, so a bunny wedged on a corner recovers.
 
 ---
 
