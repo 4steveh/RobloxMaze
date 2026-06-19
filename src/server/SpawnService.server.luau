@@ -6,6 +6,7 @@
 -- if they have none yet, at a PlayerStart marker.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -38,14 +39,24 @@ local function onCharacterAdded(player, character)
 		return -- no checkpoint and no PlayerStart placed yet; leave the default spawn
 	end
 
-	-- Placement (not RespawnLocation) is the source of truth here: the markers are
-	-- tagged Parts, not SpawnLocations, so we set the CFrame directly. Spawn upright
-	-- above the marker so a rotated marker can't tilt the character into the floor.
 	local rootPart = character:WaitForChild("HumanoidRootPart", 10)
 	if not rootPart then
 		return
 	end
-	rootPart.CFrame = CFrame.new(target.Position + Vector3.new(0, Config.Respawn.SpawnUpOffset, 0))
+
+	-- Place upright above the marker (CFrame, not RespawnLocation: the markers are
+	-- tagged Parts, not SpawnLocations). With no SpawnLocation the engine applies
+	-- its own default spawn position around CharacterAdded, which can override a
+	-- single CFrame write -- so assert ours across the next few frames so it wins.
+	local goal = CFrame.new(target.Position + Vector3.new(0, Config.Respawn.SpawnUpOffset, 0))
+	character:PivotTo(goal)
+	for _ = 1, 4 do
+		RunService.Heartbeat:Wait()
+		if not rootPart.Parent then
+			return
+		end
+		character:PivotTo(goal)
+	end
 end
 
 local function onPlayerAdded(player)

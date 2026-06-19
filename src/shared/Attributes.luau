@@ -14,6 +14,18 @@ local Attributes = {
 	-- Server-authoritative, set by SafeRoomService (handy for debugging / future
 	-- systems). The flashlight does NOT read this -- it uses the enter/leave remotes.
 	InSafeRoom = "InSafeRoom",
+
+	-- number on a Player: keys collected this round. Server-authoritative (set by
+	-- KeyService), survives death/respawn, read by ExitService and the HUD.
+	KeyCount = "KeyCount",
+
+	-- string on a Player: the player's current Enums.GameState ("Playing"/"Won"),
+	-- set by ExitService.
+	GameState = "GameState",
+
+	-- number on a Player: current flashlight battery. Set CLIENT-side by
+	-- FlashlightController purely so the HUD gauge can read it (never server-read).
+	FlashlightBattery = "FlashlightBattery",
 }
 
 return table.freeze(Attributes)

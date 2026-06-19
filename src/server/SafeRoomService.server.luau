@@ -16,6 +16,7 @@ local Discovery = require(ReplicatedStorage.Discovery)
 local Spatial = require(ReplicatedStorage.Spatial)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
+local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 
 Remotes.init()
 local enteredRemote = Remotes.get(Remotes.Names.SafeRoomEntered)
@@ -23,20 +24,6 @@ local leftRemote = Remotes.get(Remotes.Names.SafeRoomLeft)
 
 -- Whether each player was inside any SafeRoom on the previous tick.
 local insideLast = {}
-
--- The player's living HumanoidRootPart, or nil if the character/HRP is not ready
--- (spawning) or the humanoid is dead -- callers skip those players this tick.
-local function livingRootPart(player)
-	local character = player.Character
-	if not character then
-		return nil
-	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then
-		return nil
-	end
-	return character:FindFirstChild("HumanoidRootPart")
-end
 
 -- Reset transition state for a fresh character so a player who respawns inside a
 -- SafeRoom correctly re-fires "entered" on the next tick.
@@ -61,7 +48,7 @@ while true do
 
 	local safeRooms = Discovery.getAll(Tags.SafeRoom)
 	for _, player in Players:GetPlayers() do
-		local rootPart = livingRootPart(player)
+		local rootPart = PlayerUtil.livingRootPart(player)
 		if rootPart then
 			local position = rootPart.Position
 

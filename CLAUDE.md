@@ -147,13 +147,14 @@ File-extension → instance-class rules (Rojo):
 | Module          | Purpose |
 | --------------- | ------- |
 | `Tags`          | Canonical CollectionService tag-name constants. The only place tag strings exist. |
-| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`) — the `Tags` discipline applied to attributes. |
+| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`) — the `Tags` discipline applied to attributes. |
 | `Config`        | Single source of truth for every tunable number (frozen sections). |
 | `Enums`         | Enum-like constant tables (`GameState`; `MonsterType`/`MonsterState` stubs). |
 | `Types`         | Shared Luau `export type` definitions. |
 | `Discovery`     | Thin `CollectionService` wrapper — `getAll`, `observe`. |
 | `Spatial`       | Pure geometry — `isInsidePart`, `withinRange`. |
 | `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name. |
+| `PlayerUtil`    | Player-character helpers (e.g. `livingRootPart`) shared by the polling services. |
 
 ## Systems (`src/server/`, `src/client/`)
 
@@ -162,7 +163,11 @@ File-extension → instance-class rules (Rojo):
 | `GameBootstrap` | server | Skeleton sanity check: prints discovered marker counts on start. |
 | `SafeRoomService` | server | Authority on "is this player safe" + their checkpoint. Polls each living HRP against `SafeRoom` parts with `Spatial`, fires `SafeRoomEntered`/`SafeRoomLeft`, and writes the `Checkpoint` attribute. |
 | `SpawnService` | server | Single owner of spawn placement. On every `CharacterAdded`, places the character at the `Checkpoint` attribute, else a `PlayerStart` marker. |
-| `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one — the safe-room gate comes only from the server remotes. |
+| `KeyService` | server | Spawns the round's keys at a random subset of `KeySpot` markers; detects pickups by `Spatial.withinRange`; tracks each player's `KeyCount` (survives respawn); fires `KeyCollected`. |
+| `ExitService` | server | Win check: at an `ExitDoor` with enough keys → sets `GameState=Won`, freezes the player, fires `GameWon`; at the door without enough → one-shot `ExitLocked`. |
+| `KillBrickService` | server | **Temporary test tool.** A part tagged `KillBrick` kills whoever touches it — the lone sanctioned `Touched` handler, for testing death/respawn. Delete the brick (and eventually this file) when done. |
+| `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one (gate from server remotes). Publishes battery via the `FlashlightBattery` attribute for the HUD. |
+| `HUDController` | client | Icon-forward HUD: key pips (count = `Config.Keys.RequiredToWin`), battery gauge, an exit arrow shown only once all keys are in (points at the `ExitDoor`), and a win overlay. Renders only; no asset IDs (placeholder shapes/glyphs + empty `Sound`/icon slots to fill). |
 
 **Cross-script state:** server systems share per-player state through Player
 attributes named in `Attributes` (e.g. the checkpoint `CFrame`) — never globals

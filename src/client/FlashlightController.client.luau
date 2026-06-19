@@ -17,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local Attributes = require(ReplicatedStorage.Attributes)
 
 local player = Players.LocalPlayer
 
@@ -25,33 +26,6 @@ local lightOn = true -- starts on
 local inSafeRoom = false -- driven ONLY by server remotes, never by local detection
 local light = nil -- the current SpotLight (rebuilt each character)
 local flickerPhase = 0
-
--- Temporary debug readout of the battery, replaced by a real HUD gauge in
--- Prompt 2. Also mirrored to a clearly-named attribute for quick inspection.
-local debugLabel = nil
-local function ensureDebugUi()
-	-- NOTE: the layout/style literals below (size, padding, text size, transparency)
-	-- are throwaway debug-only values, intentionally exempt from the Config
-	-- single-source-of-truth rule -- this whole readout is deleted with the Prompt 2 HUD.
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "FlashlightDebug"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.Parent = player:WaitForChild("PlayerGui")
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromOffset(260, 30)
-	label.Position = UDim2.fromOffset(12, 12)
-	label.BackgroundTransparency = 0.4
-	label.BackgroundColor3 = Color3.new(0, 0, 0)
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.Font = Enum.Font.Code
-	label.TextSize = 18
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Text = ""
-	label.Parent = gui
-	debugLabel = label
-end
 
 local function setupLight(character)
 	local head = character:WaitForChild("Head", 10)
@@ -122,8 +96,6 @@ leftRemote.OnClientEvent:Connect(function()
 	inSafeRoom = false
 end)
 
-ensureDebugUi()
-
 RunService.RenderStepped:Connect(function(deltaTime)
 	-- Battery: recharge while in a SafeRoom; otherwise drain while lit. Clamp [0, max].
 	if inSafeRoom then
@@ -149,11 +121,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		end
 	end
 
-	-- Temporary debug surface (removed when the Prompt 2 HUD lands).
-	player:SetAttribute("DebugFlashlightBattery", battery)
-	if debugLabel then
-		local state = inSafeRoom and "RECHARGING (safe)" or (lightOn and "draining" or "off")
-		debugLabel.Text =
-			string.format(" Flashlight  %d / %d  -  %s", math.floor(battery + 0.5), Config.Flashlight.BatteryMax, state)
-	end
+	-- Expose the battery so the HUD gauge (HUDController) can read it. Client-only;
+	-- the battery value never leaves the client (see CLAUDE.md).
+	player:SetAttribute(Attributes.FlashlightBattery, battery)
 end)

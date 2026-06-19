@@ -15,12 +15,18 @@ local FOLDER_NAME = "Remotes"
 local Names = table.freeze({
 	SafeRoomEntered = "SafeRoomEntered", -- server -> client: the player's HumanoidRootPart entered a SafeRoom
 	SafeRoomLeft = "SafeRoomLeft", -- server -> client: ...and then left it
+	KeyCollected = "KeyCollected", -- server -> client: a key was picked up (payload: new key count)
+	GameWon = "GameWon", -- server -> client: this player reached the exit with enough keys
+	ExitLocked = "ExitLocked", -- server -> client: at the exit without enough keys (brief feedback)
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
 local REMOTE_EVENTS: { string } = {
 	Names.SafeRoomEntered,
 	Names.SafeRoomLeft,
+	Names.KeyCollected,
+	Names.GameWon,
+	Names.ExitLocked,
 }
 
 local Remotes = {}
