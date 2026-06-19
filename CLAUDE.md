@@ -149,11 +149,11 @@ File-extension → instance-class rules (Rojo):
 | `Tags`          | Canonical CollectionService tag-name constants. The only place tag strings exist. |
 | `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`) — the `Tags` discipline applied to attributes. |
 | `Config`        | Single source of truth for every tunable number (frozen sections). |
-| `Enums`         | Enum-like constant tables (`GameState`; `MonsterType`/`MonsterState` stubs). |
+| `Enums`         | Enum-like constant tables (`GameState`; `MonsterType.Bunny`; `MonsterState.{Patrol,Chase,Search}`). |
 | `Types`         | Shared Luau `export type` definitions. |
 | `Discovery`     | Thin `CollectionService` wrapper — `getAll`, `observe`. |
 | `Spatial`       | Pure geometry — `isInsidePart`, `withinRange`. |
-| `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name. |
+| `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name (now includes `MonsterCaught`). |
 | `PlayerUtil`    | Player-character helpers (e.g. `livingRootPart`) shared by the polling services. |
 
 ## Systems (`src/server/`, `src/client/`)
@@ -166,8 +166,11 @@ File-extension → instance-class rules (Rojo):
 | `KeyService` | server | Spawns the round's keys at a random subset of `KeySpot` markers; detects pickups by `Spatial.withinRange`; tracks each player's `KeyCount` (survives respawn); fires `KeyCollected`. |
 | `ExitService` | server | Win check: at an `ExitDoor` with enough keys → sets `GameState=Won`, freezes the player, fires `GameWon`; at the door without enough → one-shot `ExitLocked`. |
 | `KillBrickService` | server | **Temporary test tool.** A part tagged `KillBrick` kills whoever touches it — the lone sanctioned `Touched` handler, for testing death/respawn. Delete the brick (and eventually this file) when done. |
+| `MonsterService` | server | The bunny's owner. Spawns a valid procedural rig at each `MonsterSpawn`; each `Config.Spatial.PollInterval` senses players (vision cone + line-of-sight raycast, skipping `InSafeRoom`/`Won`), ticks the pure `BunnyFSM`, drives `PathfindingService` movement (with stall recovery + server `SetNetworkOwner`), writes the rig `State` attribute, and on a catch sets `Humanoid.Health = 0` (reusing SpawnService's respawn) and fires `MonsterCaught`. |
+| `BunnyFSM` | server | Pure FSM module (`newState`/`tick`) for the bunny: Patrol (touring) → Chase → Search → give up. No Instance side-effects — `MonsterService` applies its decisions. |
 | `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one (gate from server remotes). Publishes battery via the `FlashlightBattery` attribute for the HUD. |
 | `HUDController` | client | Icon-forward HUD: key pips (count = `Config.Keys.RequiredToWin`), battery gauge, an exit arrow shown only once all keys are in (points at the `ExitDoor`), and a win overlay. Renders only; no asset IDs (placeholder shapes/glyphs + empty `Sound`/icon slots to fill). |
+| `JumpscareController` | client | On `MonsterCaught`, plays a placeholder full-screen flash for `Config.Respawn.RespawnDelay`. Renders only. |
 
 **Cross-script state:** server systems share per-player state through Player
 attributes named in `Attributes` (e.g. the checkpoint `CFrame`) — never globals
