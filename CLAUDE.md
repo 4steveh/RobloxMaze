@@ -147,6 +147,7 @@ File-extension → instance-class rules (Rojo):
 | Module          | Purpose |
 | --------------- | ------- |
 | `Tags`          | Canonical CollectionService tag-name constants. The only place tag strings exist. |
+| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`) — the `Tags` discipline applied to attributes. |
 | `Config`        | Single source of truth for every tunable number (frozen sections). |
 | `Enums`         | Enum-like constant tables (`GameState`; `MonsterType`/`MonsterState` stubs). |
 | `Types`         | Shared Luau `export type` definitions. |
@@ -154,8 +155,19 @@ File-extension → instance-class rules (Rojo):
 | `Spatial`       | Pure geometry — `isInsidePart`, `withinRange`. |
 | `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name. |
 
-`src/server/GameBootstrap.server.luau` is a skeleton sanity check that prints the
-discovered count of each level marker on server start.
+## Systems (`src/server/`, `src/client/`)
+
+| System | Side | Role |
+| ------ | ---- | ---- |
+| `GameBootstrap` | server | Skeleton sanity check: prints discovered marker counts on start. |
+| `SafeRoomService` | server | Authority on "is this player safe" + their checkpoint. Polls each living HRP against `SafeRoom` parts with `Spatial`, fires `SafeRoomEntered`/`SafeRoomLeft`, and writes the `Checkpoint` attribute. |
+| `SpawnService` | server | Single owner of spawn placement. On every `CharacterAdded`, places the character at the `Checkpoint` attribute, else a `PlayerStart` marker. |
+| `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one — the safe-room gate comes only from the server remotes. |
+
+**Cross-script state:** server systems share per-player state through Player
+attributes named in `Attributes` (e.g. the checkpoint `CFrame`) — never globals
+or direct script-to-script calls. The client learns safe-room state only from the
+`SafeRoomService` remotes; it never detects safe rooms itself.
 
 ---
 

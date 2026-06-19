@@ -10,13 +10,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FOLDER_NAME = "Remotes"
 
--- The authoritative list of RemoteEvent names. Empty for the skeleton milestone
--- (no gameplay remotes exist yet); extend it as features land.
+-- Canonical RemoteEvent names. Like Tags for tags, this is the ONLY place these
+-- strings live -- server and client both refer to them as Remotes.Names.X.
+local Names = table.freeze({
+	SafeRoomEntered = "SafeRoomEntered", -- server -> client: the player's HumanoidRootPart entered a SafeRoom
+	SafeRoomLeft = "SafeRoomLeft", -- server -> client: ...and then left it
+})
+
+-- The authoritative list of RemoteEvent names the server creates. Grow via Names.
 local REMOTE_EVENTS: { string } = {
-	-- e.g. "KeyCollected", "GameWon", "FlashlightToggled"
+	Names.SafeRoomEntered,
+	Names.SafeRoomLeft,
 }
 
 local Remotes = {}
+
+-- Exposed so callers reference remotes by constant, never raw string.
+Remotes.Names = Names
 
 local function isRegistered(name: string): boolean
 	for _, registered in REMOTE_EVENTS do

@@ -15,11 +15,15 @@ Config.Flashlight = table.freeze({
 	BatteryMax = 100, -- seconds of light on a full battery
 	DrainPerSecond = 1, -- battery seconds spent per real second while ON
 	RechargePerSecond = 5, -- battery seconds restored per real second while in a (server-gated) SafeRoom
-	LowBatteryThreshold = 20, -- seconds remaining at/below which the UI shows a warning
+	LowBatteryThreshold = 20, -- seconds remaining at/below which the light dims/flickers
 
 	Range = 60, -- SpotLight.Range, studs
 	Angle = 75, -- SpotLight.Angle, degrees
 	Brightness = 2, -- SpotLight.Brightness
+
+	ToggleKey = Enum.KeyCode.F, -- key that toggles the flashlight on/off
+	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
+	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -38,8 +42,9 @@ Config.Spatial = table.freeze({
 
 -- Respawn -----------------------------------------------------------------------
 Config.Respawn = table.freeze({
-	AtCheckpoint = true, -- respawn at the last PlayerStart checkpoint (vs. default spawn)
+	AtCheckpoint = true, -- respawn at the last SafeRoom checkpoint (vs. always the PlayerStart marker)
 	KeepKeysOnDeath = true, -- keep collected keys through death
+	SpawnUpOffset = 5, -- studs lifted above a spawn/checkpoint marker so the character clears the floor
 })
 
 -- Win ---------------------------------------------------------------------------
