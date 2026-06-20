@@ -18,6 +18,9 @@ local Tags = {
 	MonsterSpawn = "MonsterSpawn", -- where monsters enter the maze
 	PatrolPoint = "PatrolPoint", -- nodes a patrolling monster walks between
 	AmbushNode = "AmbushNode", -- scripted scare / ambush locations
+
+	-- Atmosphere: practical lights the client FlickerController makes flicker.
+	FlickerLight = "FlickerLight", -- a Light instance that flickers like a failing fixture
 }
 
 return table.freeze(Tags)

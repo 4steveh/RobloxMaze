@@ -136,6 +136,17 @@ Config.Monster = table.freeze({
 	BodyColor = Color3.fromRGB(220, 218, 225), -- placeholder rig tone (pale, faintly sickly)
 })
 
+-- Lighting / atmosphere ---------------------------------------------------------
+-- Only the FLICKER animation tunables the FlickerController reads live here. The
+-- static place lighting (Lighting service, Atmosphere, ColorCorrection) is content
+-- saved on the place, not Config -- those aren't numbers any logic reads.
+Config.Lighting = table.freeze({
+	FlickerSpeed = 11, -- base oscillation speed (rad/s) of a flickering fixture
+	FlickerMinScale = 0.35, -- brightness floor as a fraction of the fixture's base brightness
+	FlickerOffChance = 0.015, -- per-frame chance a fixture briefly cuts out entirely
+	FlickerOffTime = 0.12, -- seconds a fixture stays cut out
+})
+
 -- Future sections (fill in as milestones land) ----------------------------------
 -- Config.Audio = table.freeze({ ... })
 
