@@ -9,6 +9,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -119,6 +120,29 @@ batteryFillCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
 batteryFillCorner.Parent = batteryFill
 batteryFill.Parent = batteryBack
 
+-- Stamina gauge (sits just above the battery gauge) ----------------------------
+local staminaBack = Instance.new("Frame")
+staminaBack.Name = "StaminaGauge"
+staminaBack.AnchorPoint = Vector2.new(0, 1)
+staminaBack.Position = UDim2.new(0, HUD.BatteryMargin, 1, -(HUD.BatteryMargin + HUD.BatteryHeight + HUD.StaminaGap))
+staminaBack.Size = UDim2.fromOffset(HUD.BatteryWidth, HUD.BatteryHeight)
+staminaBack.BackgroundColor3 = HUD.BatteryBackColor
+local staminaBackCorner = Instance.new("UICorner")
+staminaBackCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
+staminaBackCorner.Parent = staminaBack
+staminaBack.Parent = gui
+
+local staminaFill = Instance.new("Frame")
+staminaFill.Name = "Fill"
+staminaFill.AnchorPoint = Vector2.new(0, 0.5)
+staminaFill.Position = UDim2.fromScale(0, 0.5)
+staminaFill.Size = UDim2.fromScale(1, 1)
+staminaFill.BackgroundColor3 = HUD.StaminaFillColor
+local staminaFillCorner = Instance.new("UICorner")
+staminaFillCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
+staminaFillCorner.Parent = staminaFill
+staminaFill.Parent = staminaBack
+
 -- Exit arrow (placeholder glyph; swap for an arrow image later) ----------------
 local arrow = Instance.new("TextLabel")
 arrow.Name = "ExitArrow"
@@ -166,6 +190,36 @@ winText.Text = "ESCAPED"
 winText.TextColor3 = HUD.WinIconColor
 winText.Parent = winOverlay
 
+-- Transient feedback toast (key pickup / locked door) --------------------------
+local toast = Instance.new("TextLabel")
+toast.Name = "Toast"
+toast.AnchorPoint = Vector2.new(0.5, 0.5)
+toast.Position = UDim2.fromScale(0.5, HUD.ToastYScale)
+toast.Size = UDim2.fromOffset(HUD.ToastWidth, HUD.ToastHeight)
+toast.BackgroundTransparency = 1
+toast.Font = Enum.Font.GothamBold
+toast.TextSize = HUD.ToastTextSize
+toast.TextColor3 = Config.Feedback.ToastColor
+toast.TextStrokeTransparency = 0.4
+toast.TextTransparency = 1
+toast.Text = ""
+toast.Parent = gui
+
+local toastToken = 0
+local function showToast(text, color, seconds)
+	toastToken += 1
+	local mine = toastToken
+	toast.Text = text
+	toast.TextColor3 = color or Config.Feedback.ToastColor
+	toast.TextTransparency = 0
+	toast.TextStrokeTransparency = 0.4
+	task.delay(seconds, function()
+		if mine == toastToken then
+			TweenService:Create(toast, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+		end
+	end)
+end
+
 -- Remotes ---------------------------------------------------------------------
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
@@ -175,6 +229,7 @@ keyCollectedRemote.OnClientEvent:Connect(function(count)
 	keyCount = count or keyCount
 	refreshPips()
 	keyCollectSound:Play()
+	showToast(string.format("KEY %d/%d", keyCount, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
 end)
 
 gameWonRemote.OnClientEvent:Connect(function()
@@ -183,6 +238,11 @@ end)
 
 exitLockedRemote.OnClientEvent:Connect(function()
 	exitLockedSound:Play()
+	showToast(
+		string.format("%s — NEED %d KEYS (have %d)", Config.Feedback.LockedTextPrefix, requiredKeys, keyCount),
+		HUD.BatteryLowColor,
+		Config.Feedback.LockedToastSeconds
+	)
 	-- A small rattle of the pip row -- nothing punishing.
 	local step = HUD.LockedShakeTime / 4
 	for _ = 1, 2 do
@@ -206,6 +266,15 @@ RunService.RenderStepped:Connect(function()
 	batteryFill.BackgroundColor3 = if battery <= Config.Flashlight.LowBatteryThreshold
 		then HUD.BatteryLowColor
 		else HUD.BatteryFillColor
+
+	-- Stamina gauge reads the server-authoritative Stamina attribute (SprintService).
+	local stamina = player:GetAttribute(Attributes.Stamina)
+	if stamina == nil then
+		stamina = Config.Player.StaminaMax
+	end
+	local sfrac = math.clamp(stamina / Config.Player.StaminaMax, 0, 1)
+	staminaFill.Size = UDim2.fromScale(sfrac, 1)
+	staminaFill.BackgroundColor3 = if sfrac <= 0.25 then HUD.StaminaLowColor else HUD.StaminaFillColor
 
 	-- Exit arrow: only once every key is collected; points toward the ExitDoor.
 	local showArrow = keyCount >= requiredKeys

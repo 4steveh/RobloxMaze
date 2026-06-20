@@ -24,6 +24,8 @@ local function track(inst)
 			phase = math.random() * math.pi * 2,
 			speed = Config.Lighting.FlickerSpeed * (0.8 + math.random() * 0.4),
 			offUntil = 0,
+			-- The fixture's light-shaft Beam (if any) flickers in lockstep with the light.
+			beam = inst.Parent and inst.Parent:FindFirstChild("ShaftBeam"),
 		}
 	end
 end
@@ -54,6 +56,21 @@ RunService.RenderStepped:Connect(function(dt)
 			local scale = Config.Lighting.FlickerMinScale + (1 - Config.Lighting.FlickerMinScale) * osc
 			scale = math.clamp(scale * (0.92 + math.random() * 0.16), 0, 1.2)
 			light.Brightness = s.base * scale
+		end
+
+		-- Flicker the fixture's light shaft with it: hide it on a blackout, otherwise
+		-- fade its opacity with the light's current brightness.
+		if s.beam then
+			if light.Brightness <= 0 then
+				s.beam.Enabled = false
+			else
+				s.beam.Enabled = true
+				local bscale = math.clamp(light.Brightness / math.max(s.base, 0.01), 0, 1)
+				s.beam.Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1 - 0.45 * bscale),
+					NumberSequenceKeypoint.new(1, 1),
+				})
+			end
 		end
 	end
 end)

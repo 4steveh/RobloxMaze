@@ -19,6 +19,11 @@ local Names = table.freeze({
 	GameWon = "GameWon", -- server -> client: this player reached the exit with enough keys
 	ExitLocked = "ExitLocked", -- server -> client: at the exit without enough keys (brief feedback)
 	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught by a monster (play the jumpscare)
+	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
+
+	-- CLIENT -> SERVER (the only inbound remote). Payload is HOSTILE: validate type and
+	-- rate-limit on the server (see SprintService). Carries the sprint key held-state.
+	SprintIntent = "SprintIntent", -- client -> server: boolean, "is the sprint key held"
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
@@ -29,6 +34,8 @@ local REMOTE_EVENTS: { string } = {
 	Names.GameWon,
 	Names.ExitLocked,
 	Names.MonsterCaught,
+	Names.MonsterStateChanged,
+	Names.SprintIntent,
 }
 
 local Remotes = {}

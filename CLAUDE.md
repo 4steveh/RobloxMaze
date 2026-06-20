@@ -55,6 +55,18 @@ selene .                                     # lint
 be clean (Selene: `0 errors, 0 warnings`). Regenerate `sourcemap.json` whenever
 the instance tree changes so the Luau language server stays accurate.
 
+A [`Makefile`](Makefile) wraps these (zero external deps — just the Rokit shims):
+`make install` (tools + git hooks), `make fmt` / `make lint` / `make check`
+(format + lint + build gate), `make serve` / `make build` / `make sourcemap`. A
+versioned **pre-commit hook** ([`.githooks/pre-commit`](.githooks/pre-commit),
+enabled by `make hooks`) blocks any commit that isn't StyLua-clean + Selene-clean.
+
+**Code-sync fallback (when the Rojo plugin isn't connected):** `make serve-files`
+serves the repo over `http://127.0.0.1:8777`, then paste
+[`scripts/studio-sync.luau`](scripts/studio-sync.luau) into the Studio command bar
+(Edit mode) to pull every `src/*.luau` into the place via `HttpService`. This is a
+stopgap; the supported path is `rojo serve` + the plugin's **Connect**.
+
 ---
 
 ## Architecture
@@ -98,8 +110,6 @@ close enough to this key / exit?") are decided by the **server** running
 
 **Do not use `Touched` / `TouchEnded`** for occupancy or proximity — they are
 unreliable (miss fast movers, fire spuriously, depend on physics ownership).
-*(The single exception is a throwaway `KillBrick` test in Prompt 2, which is
-temporary and will be removed.)*
 
 ### Tag-based discovery
 Never hardcode instance paths or names for level objects. Markers are placed in
@@ -147,14 +157,15 @@ File-extension → instance-class rules (Rojo):
 | Module          | Purpose |
 | --------------- | ------- |
 | `Tags`          | Canonical CollectionService tag-name constants. The only place tag strings exist. |
-| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`) — the `Tags` discipline applied to attributes. |
+| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`, `RespawnGrace`, `Stamina`, `FlashlightOn`) — the `Tags` discipline applied to attributes. |
 | `Config`        | Single source of truth for every tunable number (frozen sections). |
 | `Enums`         | Enum-like constant tables (`GameState`; `MonsterType.Bunny`; `MonsterState.{Patrol,Chase,Search}`). |
 | `Types`         | Shared Luau `export type` definitions. |
 | `Discovery`     | Thin `CollectionService` wrapper — `getAll`, `observe`. |
 | `Spatial`       | Pure geometry — `isInsidePart`, `withinRange`. |
-| `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name (now includes `MonsterCaught`). |
+| `Remotes`       | RemoteEvent registry under one ReplicatedStorage folder; fetch by name. Server→client cues plus `MonsterStateChanged`, and the one **client→server** remote `SprintIntent` (validated + rate-limited server-side). |
 | `PlayerUtil`    | Player-character helpers (e.g. `livingRootPart`) shared by the polling services. |
+| `AudioGroups`   | Builds the SoundService `SoundGroup` bus tree (Master > Music/Ambient/Monster/SFX/UI) from `Config.Audio.Groups`; `get(name)` routes a Sound to a bus, `duck(name, …)` ducks one. The single home for audio routing/mix. |
 
 ## Systems (`src/server/`, `src/client/`)
 
@@ -162,15 +173,23 @@ File-extension → instance-class rules (Rojo):
 | ------ | ---- | ---- |
 | `GameBootstrap` | server | Skeleton sanity check: prints discovered marker counts on start. |
 | `SafeRoomService` | server | Authority on "is this player safe" + their checkpoint. Polls each living HRP against `SafeRoom` parts with `Spatial`, fires `SafeRoomEntered`/`SafeRoomLeft`, and writes the `Checkpoint` attribute. |
-| `SpawnService` | server | Single owner of the character lifecycle. Sets `Players.CharacterAutoLoads = false` and calls `LoadCharacter` itself. Gives each player a personal hidden `SpawnLocation` (their `RespawnLocation`, `Duration = 0` so no forcefield), moves it to the `Checkpoint` attribute, else a `PlayerStart` marker, and only then loads — so the character spawns deterministically *on* the pad with no origin flash, no Heartbeat reassert. On `Humanoid.Died` it waits `Config.Respawn.RespawnDelay`, then respawns the same way. |
+| `SpawnService` | server | Single owner of the character lifecycle. Sets `Players.CharacterAutoLoads = false` and calls `LoadCharacter` itself. Gives each player a personal hidden `SpawnLocation` (their `RespawnLocation`, `Duration = 0` so no forcefield), moves it to the `Checkpoint` attribute, else a `PlayerStart` marker, and only then loads — so the character spawns deterministically *on* the pad with no origin flash, no Heartbeat reassert. On `Humanoid.Died` it waits `Config.Respawn.RespawnDelay`, then respawns the same way. Each spawn also grants `Config.Respawn.InvulnSeconds` of `RespawnGrace` (a visible ForceField; the monster ignores graced players) so a fresh character can't be instantly re-caught. |
 | `KeyService` | server | Spawns the round's keys at a random subset of `KeySpot` markers; detects pickups by `Spatial.withinRange`; tracks each player's `KeyCount` (survives respawn); fires `KeyCollected`. |
 | `ExitService` | server | Win check: at an `ExitDoor` with enough keys → sets `GameState=Won`, freezes the player, fires `GameWon`; at the door without enough → one-shot `ExitLocked`. |
-| `KillBrickService` | server | **Temporary test tool.** A part tagged `KillBrick` kills whoever touches it — the lone sanctioned `Touched` handler, for testing death/respawn. Delete the brick (and eventually this file) when done. |
-| `MonsterService` | server | The bunny's owner. Spawns a valid procedural rig at each `MonsterSpawn`; each `Config.Spatial.PollInterval` senses players (vision cone + line-of-sight raycast, skipping `InSafeRoom`/`Won`), ticks the pure `BunnyFSM`, drives `PathfindingService` movement (with stall recovery + server `SetNetworkOwner`), writes the rig `State` attribute, and on a catch sets `Humanoid.Health = 0` (reusing SpawnService's respawn) and fires `MonsterCaught`. |
+| `MonsterService` | server | The bunny's owner. Spawns a rig at each `MonsterSpawn` — an invisible BodySize physics root with the welded `ServerStorage.Assets.BunnyBody` mascot mesh (physics/pathfinding unchanged) + a red eye-glow. Each `Config.Spatial.PollInterval` senses players (vision cone + LoS raycast, skipping `InSafeRoom`/`RespawnGrace`/`Won`), ticks the pure `BunnyFSM`, drives `PathfindingService` movement, writes the rig `State` attribute, fires `MonsterStateChanged` to the chased player, and per-rig `pcall`-isolates the tick. On a catch it sets `Humanoid.Health = 0`, fires `MonsterCaught`, then **resets the FSM + repels the rig home + goes dormant** so it cannot camp the spawn. |
+| `SprintService` | server | Server-authoritative sprint/stamina — the escape tool. Owns `Humanoid.WalkSpeed` and the `Stamina` attribute; the client sends only `SprintIntent` (the one client→server remote, **validated + rate-limited**). Skips `Won` players so it never fights the win-freeze. |
 | `BunnyFSM` | server | Pure FSM module (`newState`/`tick`) for the bunny: Patrol (touring) → Chase → Search → give up. No Instance side-effects — `MonsterService` applies its decisions. |
-| `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one (gate from server remotes). Publishes battery via the `FlashlightBattery` attribute for the HUD. |
-| `HUDController` | client | Icon-forward HUD: key pips (count = `Config.Keys.RequiredToWin`), battery gauge, an exit arrow shown only once all keys are in (points at the `ExitDoor`), and a win overlay. Renders only; no asset IDs (placeholder shapes/glyphs + empty `Sound`/icon slots to fill). |
-| `JumpscareController` | client | On `MonsterCaught`, plays a placeholder full-screen flash for `Config.Respawn.RespawnDelay`. Renders only. |
+| `FlashlightController` | client | Head-parented `SpotLight` (Config-driven) toggled with `Config.Flashlight.ToggleKey`; client-side battery that drains while lit outside a safe room and recharges inside one (gate from server remotes). Publishes battery via `FlashlightBattery` and on/off via `FlashlightOn` for the HUD/SFX. |
+| `HUDController` | client | Icon-forward HUD: key pips (count = `Config.Keys.RequiredToWin`), battery + stamina gauges, an exit arrow shown only once all keys are in, transient feedback toasts (`KEY n/3`, `EXIT LOCKED`), and a win overlay. Renders only. |
+| `ObjectiveController` | client | Direction layer: spawn intro banner, a controls hint, and a persistent `KEYS n/3 → reach the EXIT` objective tracker (off `KeyCollected`). |
+| `CompassController` | client | Wayfinding: a through-wall beacon over every live key (tag `ActiveKey`) plus an edge arrow to the nearest one. |
+| `SprintController` | client | Captures the sprint key and sends the held-state to `SprintService` as `SprintIntent`. Changes no speed/stamina locally. |
+| `FlickerController` | client | Makes `FlickerLight` fixtures (and their `ShaftBeam` light shafts) flicker like failing fluorescents. Renders only. |
+| `MonsterAudioController` | client | 3D breathing/footsteps on each rig, a distance-scaled heartbeat, and a Patrol→Chase sting (off `MonsterStateChanged`). |
+| `AmbientController` | client | Looped drone/room-tone beds, the intermittent 3D music-box motif on the `MusicBoxEmitter` statue, and reverb switched by SafeRoom occupancy. |
+| `PlayerSFXController` | client | Footsteps timed to movement, the flashlight toggle click (off `FlashlightOn`), and a low-battery beep. |
+| `StingerController` | client | One-shot stingers wired to existing remotes: key chime, locked-door thunk, win jingle (ducks the beds). |
+| `JumpscareController` | client | On `MonsterCaught`: a scream (ducking every bus), a full-screen `ViewportFrame` close-up of the live monster mesh lunging with shake, a red flash, and the `CAUGHT!` headline + respawn countdown. |
 
 **Cross-script state:** server systems share per-player state through Player
 attributes named in `Attributes` (e.g. the checkpoint `CFrame`) — never globals
@@ -216,3 +235,11 @@ selene generate-roblox-std   # rewrites roblox.yml; commit it
   as hostile: validate it on the server.
 - **`Config` grows by section** (`Config.Monster`, `Config.Audio`, …), never by
   scattering numbers into systems.
+## Roblox workflow (machine-wide skill: ~/.claude/skills/roblox-workflow)
+This repo follows the roblox-workflow personal skill for source-of-truth, verify, and build-loop rules.
+Filesystem (via Rojo) is the source of truth for scripts; do not hand-edit scripts in Studio while Rojo serves.
+TARGET CHECK: multiple Studios may be open on one shared proxy — confirm set_active_studio is the intended game
+before any mutating call (execute_luau, multi_edit, insert_asset, upload_image, generate_*).
+SECURITY TRIPWIRE: never insert_asset (marketplace asset by ID) without first script_read-ing and scanning every
+contained script for obfuscation, remote require(), HttpService, loadstring, getfenv — then get explicit approval.
+Never run execute_luau touching credentials, real DataStores, or publishing APIs without confirmation.

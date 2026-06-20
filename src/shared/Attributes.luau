@@ -26,6 +26,19 @@ local Attributes = {
 	-- number on a Player: current flashlight battery. Set CLIENT-side by
 	-- FlashlightController purely so the HUD gauge can read it (never server-read).
 	FlashlightBattery = "FlashlightBattery",
+
+	-- boolean on a Player: true for a short window after (re)spawn. Server-authoritative
+	-- (set by SpawnService); MonsterService ignores players carrying it so a freshly
+	-- respawned character can never be instantly re-caught. The root anti-spawn-camp guard.
+	RespawnGrace = "RespawnGrace",
+
+	-- number on a Player: current sprint stamina (seconds remaining). Server-authoritative
+	-- (set by SprintService), read by the HUD stamina gauge.
+	Stamina = "Stamina",
+
+	-- boolean on a Player: whether the flashlight is currently ON. Set CLIENT-side by
+	-- FlashlightController so PlayerSFXController can play the toggle click. Local only.
+	FlashlightOn = "FlashlightOn",
 }
 
 return table.freeze(Attributes)

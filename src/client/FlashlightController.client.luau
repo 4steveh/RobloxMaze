@@ -27,6 +27,9 @@ local inSafeRoom = false -- driven ONLY by server remotes, never by local detect
 local light = nil -- the current SpotLight (rebuilt each character)
 local flickerPhase = 0
 
+-- Publish the on/off state so PlayerSFXController can play the toggle click (local).
+player:SetAttribute(Attributes.FlashlightOn, lightOn)
+
 local function setupLight(character)
 	local head = character:WaitForChild("Head", 10)
 	if not head then
@@ -83,6 +86,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 	if input.KeyCode == Config.Flashlight.ToggleKey then
 		lightOn = not lightOn
+		player:SetAttribute(Attributes.FlashlightOn, lightOn)
 	end
 end)
 

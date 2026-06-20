@@ -9,6 +9,7 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 
 local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
@@ -47,25 +48,63 @@ local function makeKey(position)
 	light.Parent = key
 
 	key.Parent = keysFolder
+	-- Tag it so the client compass can beacon live keys (tag-based discovery, not a
+	-- hardcoded path). Removed implicitly on Destroy when collected.
+	CollectionService:AddTag(key, Tags.ActiveKey)
 	table.insert(liveKeys, key)
 end
 
--- Round start (once): place keys at a random subset of the KeySpot markers.
+-- Round start (once): place keys at a random subset of the KeySpot markers, biased
+-- away from any MonsterSpawn so a required key never spawns inside the bunny's
+-- detection bubble (see Config.Monster.NoKeySpawnRadius).
+local function shuffleInPlace(t)
+	for i = #t, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		t[i], t[j] = t[j], t[i]
+	end
+end
+
 local function spawnRoundKeys()
-	local spots = {}
-	for _, marker in Discovery.getAll(Tags.KeySpot) do
-		if marker:IsA("BasePart") then
-			table.insert(spots, marker)
+	local spawnPositions = {}
+	for _, m in Discovery.getAll(Tags.MonsterSpawn) do
+		if m:IsA("BasePart") then
+			table.insert(spawnPositions, m.Position)
 		end
 	end
-	-- Fisher-Yates shuffle, then take the first N.
-	for i = #spots, 2, -1 do
-		local j = rng:NextInteger(1, i)
-		spots[i], spots[j] = spots[j], spots[i]
+	local function nearAnySpawn(pos)
+		for _, sp in spawnPositions do
+			-- Flat XZ distance, consistent with the bunny's ground-plane sensing.
+			if
+				(Vector3.new(pos.X, 0, pos.Z) - Vector3.new(sp.X, 0, sp.Z)).Magnitude < Config.Monster.NoKeySpawnRadius
+			then
+				return true
+			end
+		end
+		return false
 	end
-	local count = math.min(Config.Keys.SpawnPerRound, #spots)
+
+	-- Partition spots: prefer "far" ones; "near" are a fallback only if there aren't
+	-- enough far spots to fill the round (so the round always gets SpawnPerRound keys).
+	local far, near = {}, {}
+	for _, marker in Discovery.getAll(Tags.KeySpot) do
+		if marker:IsA("BasePart") then
+			table.insert(if nearAnySpawn(marker.Position) then near else far, marker)
+		end
+	end
+	shuffleInPlace(far)
+	shuffleInPlace(near)
+
+	local ordered = {}
+	for _, m in far do
+		table.insert(ordered, m)
+	end
+	for _, m in near do
+		table.insert(ordered, m)
+	end
+
+	local count = math.min(Config.Keys.SpawnPerRound, #ordered)
 	for i = 1, count do
-		makeKey(spots[i].Position)
+		makeKey(ordered[i].Position)
 	end
 end
 

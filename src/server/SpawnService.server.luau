@@ -96,6 +96,22 @@ end
 -- job now; this handler only owns the death loop (also the window the jumpscare
 -- will later fill).
 local function onCharacterAdded(player, character)
+	-- Respawn invulnerability (anti-spawn-camp): for InvulnSeconds the monster ignores
+	-- this player (MonsterService skips RespawnGrace players), so a freshly loaded
+	-- character can never be instantly re-caught at its spawn. The visible ForceField
+	-- is only the legibility cue -- the real guard is the sensing skip (a catch sets
+	-- Humanoid.Health = 0 directly, which a ForceField would not block anyway).
+	player:SetAttribute(Attributes.RespawnGrace, true)
+	local shield = Instance.new("ForceField")
+	shield.Visible = true
+	shield.Parent = character
+	task.delay(Config.Respawn.InvulnSeconds, function()
+		player:SetAttribute(Attributes.RespawnGrace, false)
+		if shield.Parent then
+			shield:Destroy()
+		end
+	end)
+
 	local humanoid = character:WaitForChild("Humanoid", 10)
 	if not humanoid then
 		return

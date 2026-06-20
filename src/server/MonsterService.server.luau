@@ -8,6 +8,7 @@
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 
@@ -28,6 +29,7 @@ monstersFolder.Parent = Workspace
 
 Remotes.init()
 local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
+local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
 
 -- A VALID procedural Humanoid rig: a HumanoidRootPart body + a welded Head (a
 -- Humanoid needs a Head to be a living character) + a Humanoid with RequiresNeck
@@ -37,19 +39,24 @@ local function createRig(spawnPart): Model
 	local rig = Instance.new("Model")
 	rig.Name = Enums.MonsterType.Bunny
 
+	-- Invisible physics root: the collision box pathfinding/movement use. It stays the
+	-- BodySize box so AgentRadius and corridor fit are unchanged; the visible body is
+	-- the welded mascot mesh below.
 	local root = Instance.new("Part")
 	root.Name = "HumanoidRootPart"
 	root.Size = Config.Monster.BodySize
-	root.Color = Config.Monster.BodyColor
+	root.Transparency = 1
 	root.Anchored = false
 	root.CanCollide = true
 	root.Parent = rig
 
+	-- Invisible Head (a Humanoid needs a Head to count as a living character); also
+	-- hosts the eye-glow light at roughly face height.
 	local head = Instance.new("Part")
 	head.Name = "Head"
 	head.Shape = Enum.PartType.Ball
 	head.Size = Vector3.new(1, 1, 1)
-	head.Color = Config.Monster.BodyColor
+	head.Transparency = 1
 	head.CanCollide = false
 	head.Massless = true -- doesn't affect the Humanoid's balance
 	head.Parent = rig
@@ -59,6 +66,30 @@ local function createRig(spawnPart): Model
 	weld.Part1 = head
 	weld.C0 = CFrame.new(0, Config.Monster.BodySize.Y / 2 + 0.5, 0)
 	weld.Parent = root
+
+	-- Visible body: the corrupted-mascot mesh, welded to the invisible root so it moves
+	-- with the physics body but never affects pathfinding (CanCollide off, Massless).
+	local body = ServerStorage.Assets.BunnyBody:Clone()
+	body.Name = "Body"
+	body.Anchored = false
+	body.CanCollide = false
+	body.CanQuery = false
+	body.Massless = true
+	body.Parent = rig
+	local bodyWeld = Instance.new("Weld")
+	bodyWeld.Part0 = root
+	bodyWeld.Part1 = body
+	bodyWeld.C0 = CFrame.new(0, Config.Monster.ModelYOffset, 0)
+		* CFrame.Angles(0, math.rad(Config.Monster.ModelFaceYaw), 0)
+	bodyWeld.Parent = root
+
+	-- A faint red eye-glow so it reads as "watching" in the dark.
+	local glow = Instance.new("PointLight")
+	glow.Name = "EyeGlow"
+	glow.Color = Config.Monster.EyeGlowColor
+	glow.Brightness = Config.Monster.EyeGlowBrightness
+	glow.Range = Config.Monster.EyeGlowRange
+	glow.Parent = head
 
 	local humanoid = Instance.new("Humanoid")
 	humanoid.RequiresNeck = false -- single-body placeholder has no Neck joint
@@ -72,7 +103,10 @@ local function createRig(spawnPart): Model
 	rig:SetAttribute(STATE_ATTRIBUTE, Enums.MonsterState.Patrol)
 
 	-- Keep physics authority on the server so server-driven MoveTo is honored.
-	root:SetNetworkOwner(nil)
+	-- pcall: SetNetworkOwner can raise on an unanchored part mid-construction.
+	pcall(function()
+		root:SetNetworkOwner(nil)
+	end)
 	return rig
 end
 
@@ -108,6 +142,12 @@ local function sensePlayers(rig: Model): { any }
 			continue
 		end
 		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
+			continue
+		end
+		-- Respawn invulnerability: a freshly (re)spawned player is invisible to the
+		-- bunny for Config.Respawn.InvulnSeconds, so it can never instantly re-catch
+		-- at the spawn point. The root anti-spawn-camp guard (see SpawnService).
+		if player:GetAttribute(Attributes.RespawnGrace) == true then
 			continue
 		end
 		local hrp = PlayerUtil.livingRootPart(player)
@@ -249,19 +289,42 @@ local function spawnBunnies()
 	for _, spawnPart in spawns do
 		if spawnPart:IsA("BasePart") then
 			local rig = createRig(spawnPart)
-			table.insert(instances, { rig = rig, state = BunnyFSM.newState(), mover = createMover(rig) })
+			table.insert(instances, {
+				rig = rig,
+				state = BunnyFSM.newState(),
+				mover = createMover(rig),
+				spawnPart = spawnPart, -- home to repel the rig to on a catch
+				dormantUntil = 0, -- os.clock() until which this rig senses nothing (post-catch)
+				prevState = Enums.MonsterState.Patrol, -- last state we fired MonsterStateChanged for
+				prevTargetUserId = nil, -- the player it was chasing last tick (so a fade fires to them)
+			})
 		end
 	end
 end
 
 -- A catch reuses the hardened death/respawn: kill the player and cue the client
 -- jumpscare. SpawnService handles RespawnDelay -> respawn at the checkpoint.
-local function catch(player: Player)
+--
+-- It ALSO breaks the spawn-camp at its root (the #1 player complaint): clearing the
+-- FSM drops Chase/lastSeen so the bunny stops loitering on the kill site, the rig is
+-- sent home to its MonsterSpawn, and it goes dormant (senses nothing) through the
+-- respawn window -- so it can't already be on top of the player when they reappear.
+local function catch(inst, player: Player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid and humanoid.Health > 0 then
-		humanoid.Health = 0
-		caughtRemote:FireClient(player)
+	if not (humanoid and humanoid.Health > 0) then
+		return
+	end
+	humanoid.Health = 0
+	caughtRemote:FireClient(player)
+
+	if Config.Monster.ResetToPatrolOnCatch then
+		inst.state = BunnyFSM.newState()
+		local spawnPart = inst.spawnPart
+		if spawnPart and inst.rig.PrimaryPart then
+			inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, Config.Monster.BodySize.Y, 0)))
+		end
+		inst.dormantUntil = os.clock() + Config.Monster.PostCatchDormantSeconds
 	end
 end
 
@@ -273,18 +336,29 @@ local lastClock = os.clock()
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
-	local dt = now - lastClock
+	-- Clamp dt: a server hitch (ComputeAsync yields, GC pause) must not let a single
+	-- tick advance the FSM past LoseSightSeconds / SearchDuration in one jump.
+	local dt = math.min(now - lastClock, Config.Spatial.PollInterval * Config.Monster.MaxTickDtFactor)
 	lastClock = now
 	local nodes = patrolNodePositions()
 	for _, inst in instances do
-		local rig = inst.rig
-		local root = rig.PrimaryPart
-		if root and rig.Parent then
+		-- Per-rig isolation: a throw on one rig (PrimaryPart cleared mid-frame, MoveTo
+		-- on a destroyed Humanoid, a raycast edge case) must NOT kill the loop and
+		-- freeze every monster forever. Warn and carry on.
+		local ok, err = pcall(function()
+			local rig = inst.rig
+			local root = rig.PrimaryPart
+			if not (root and rig.Parent) then
+				return
+			end
+			-- Dormant after a catch: sense nothing, so the (freshly reset) FSM just
+			-- patrols home instead of re-acquiring the player at the kill/respawn site.
+			local dormant = now < (inst.dormantUntil or 0)
 			local sensed = {
 				dt = dt,
 				rigPosition = root.Position,
 				patrolNodes = nodes,
-				players = sensePlayers(rig),
+				players = if dormant then {} else sensePlayers(rig),
 			}
 			local result = BunnyFSM.tick(inst.state, sensed)
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
@@ -293,9 +367,26 @@ while true do
 			end
 			inst.mover.update(result.moveTarget, dt)
 			rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
-			if result.caught then
-				catch(result.caught)
+
+			-- Per-player chase signal: when this rig's FSM state changes, tell the chased
+			-- player (or the one it just stopped chasing) so their MonsterAudioController
+			-- can hit or clear the chase sting -- correct even with multiple players.
+			if inst.state.name ~= inst.prevState then
+				local uid = inst.state.targetUserId or inst.prevTargetUserId
+				local target = uid and Players:GetPlayerByUserId(uid)
+				if target then
+					stateRemote:FireClient(target, inst.state.name)
+				end
+				inst.prevState = inst.state.name
 			end
+			inst.prevTargetUserId = inst.state.targetUserId
+
+			if result.caught then
+				catch(inst, result.caught)
+			end
+		end)
+		if not ok then
+			warn("[MonsterService] tick error on a rig (skipped this tick):", err)
 		end
 	end
 end

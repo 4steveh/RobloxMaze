@@ -11,16 +11,17 @@ local Tags = {
 	KeySpot = "KeySpot", -- candidate key spawn locations
 	SafeRoom = "SafeRoom", -- battery-recharge / safe zones
 
-	-- Temporary test tag (Prompt 2 only -- remove once spatial detection is proven).
-	KillBrick = "KillBrick",
+	-- Runtime markers (applied by code, not placed in Studio).
+	ActiveKey = "ActiveKey", -- a key part live in the world this round; the client compass beacons these
 
-	-- Future milestones (monsters). Defined now so code is never stringly-typed.
+	-- Monster markers.
 	MonsterSpawn = "MonsterSpawn", -- where monsters enter the maze
 	PatrolPoint = "PatrolPoint", -- nodes a patrolling monster walks between
 	AmbushNode = "AmbushNode", -- scripted scare / ambush locations
 
 	-- Atmosphere: practical lights the client FlickerController makes flicker.
 	FlickerLight = "FlickerLight", -- a Light instance that flickers like a failing fixture
+	MusicBoxEmitter = "MusicBoxEmitter", -- a part the AmbientController plays the intermittent 3D music-box motif from
 }
 
 return table.freeze(Tags)
