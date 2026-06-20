@@ -39,6 +39,17 @@ local Attributes = {
 	-- boolean on a Player: whether the flashlight is currently ON. Set CLIENT-side by
 	-- FlashlightController so PlayerSFXController can play the toggle click. Local only.
 	FlashlightOn = "FlashlightOn",
+
+	-- string on a MONSTER RIG (not a Player): which Enums.MonsterType the rig is
+	-- ("Bunny"/"Monkey"). Server-set in the rig builder; read by the client
+	-- MonsterAnimController (to pick the gait recipe) and per-type monster audio.
+	MonsterSpecies = "Species",
+
+	-- number on a Player (0..1): server-computed audible NOISE this player is making
+	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
+	-- NoiseService (never client-set), read by the monkey's hearing detection and the
+	-- HUD noise meter. Zeroed in a SafeRoom / Won / RespawnGrace.
+	NoiseLevel = "NoiseLevel",
 }
 
 return table.freeze(Attributes)

@@ -1,22 +1,35 @@
 --!strict
 -- BunnyFSM.luau
 -- Pure decision module for the bunny (one FSM per monster type, per CLAUDE.md).
--- `tick` reads sensed inputs and the current state, MUTATES the state, and returns
--- a movement intent + whether a catch happened. It performs NO Instance work --
--- MonsterService owns all world mutation, so this module is unit-testable in
--- isolation. States are Enums.MonsterState.{Patrol, Chase, Search}.
+-- `tick(state, sensed, cfg)` reads sensed inputs, the current state, and the bunny's
+-- resolved Config slice (`cfg` = Config.Monster.Shared U Config.Monster.Species.Bunny,
+-- injected so multiple species can coexist without sharing one config namespace),
+-- MUTATES the state, and returns a movement intent + whether a catch happened. It
+-- performs NO Instance work -- MonsterService owns all world mutation -- so this module
+-- is unit-testable in isolation. States are Enums.MonsterState.{Patrol, Chase, Search}.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Enums = require(ReplicatedStorage.Enums)
-local Config = require(ReplicatedStorage.Config)
+local MonsterTypes = require(ReplicatedStorage.MonsterTypes)
 
-export type PlayerSense = { player: Player, position: Vector3, visible: boolean }
-export type Sensed = {
-	dt: number,
-	rigPosition: Vector3,
-	patrolNodes: { Vector3 },
-	players: { PlayerSense },
+export type PlayerSense = MonsterTypes.PlayerSense
+export type Sensed = MonsterTypes.Sensed
+export type TickResult = MonsterTypes.TickResult
+
+-- The fields of the resolved Config slice this FSM reads (a subset of Shared U Species).
+export type Config = {
+	PatrolSpeed: number,
+	ChaseSpeed: number,
+	CatchRadius: number,
+	LoseSightSeconds: number,
+	SearchDuration: number,
+	SearchWanderRadius: number,
+	WaypointReachedDistance: number,
+	PatrolMemory: number,
 }
+
+-- The bunny's full FSM state -- a superset of MonsterTypes.FSMState (`name`,
+-- `targetUserId`), which is all MonsterService reads off it.
 export type FSMState = {
 	name: string,
 	patrolTarget: Vector3?,
@@ -27,7 +40,6 @@ export type FSMState = {
 	searchElapsed: number,
 	searchTarget: Vector3?,
 }
-export type TickResult = { moveTarget: Vector3?, speed: number, caught: Player? }
 
 local BunnyFSM = {}
 
@@ -39,10 +51,10 @@ end
 
 -- Nearest patrol node to `from`, excluding any within WaypointReachedDistance of
 -- `exclude`. Returns nil if none.
-local function nearestNode(nodes: { Vector3 }, from: Vector3, exclude: Vector3?): Vector3?
+local function nearestNode(nodes: { Vector3 }, from: Vector3, exclude: Vector3?, cfg: Config): Vector3?
 	local best, bestDist = nil, math.huge
 	for _, node in nodes do
-		if exclude and flatDistance(node, exclude) < Config.Monster.WaypointReachedDistance then
+		if exclude and flatDistance(node, exclude) < cfg.WaypointReachedDistance then
 			continue
 		end
 		local d = flatDistance(node, from)
@@ -56,12 +68,12 @@ end
 -- Nearest node not within reach of any recently-visited node, so the bunny tours
 -- the maze. Falls back to the nearest node other than the most-recent if every
 -- node is recent (few-node layouts).
-local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vector3 }): Vector3?
+local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vector3 }, cfg: Config): Vector3?
 	local best, bestDist = nil, math.huge
 	for _, node in nodes do
 		local isRecent = false
 		for _, r in recent do
-			if flatDistance(node, r) < Config.Monster.WaypointReachedDistance then
+			if flatDistance(node, r) < cfg.WaypointReachedDistance then
 				isRecent = true
 				break
 			end
@@ -74,7 +86,7 @@ local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vecto
 		end
 	end
 	if best == nil then
-		best = nearestNode(nodes, from, recent[#recent])
+		best = nearestNode(nodes, from, recent[#recent], cfg)
 	end
 	return best
 end
@@ -95,11 +107,11 @@ end
 
 -- Nearest eligible player within CatchRadius of the rig, or nil. Catch is pure
 -- proximity (it is on top of you), independent of the vision cone.
-local function caughtPlayer(sensed: Sensed): Player?
+local function caughtPlayer(sensed: Sensed, cfg: Config): Player?
 	local best, bestDist = nil, math.huge
 	for _, ps in sensed.players do
 		local d = flatDistance(ps.position, sensed.rigPosition)
-		if d <= Config.Monster.CatchRadius and d < bestDist then
+		if d <= cfg.CatchRadius and d < bestDist then
 			best, bestDist = ps.player, d
 		end
 	end
@@ -135,45 +147,45 @@ function BunnyFSM.newState(): FSMState
 end
 
 -- Enter Chase aimed at a freshly-seen player. Shared by Patrol and Search.
-local function beginChase(state: FSMState, seen: PlayerSense): TickResult
+local function beginChase(state: FSMState, seen: PlayerSense, cfg: Config): TickResult
 	state.name = Enums.MonsterState.Chase
 	state.targetUserId = seen.player.UserId
 	state.lastSeen = seen.position
 	state.timeSinceSeen = 0
-	return { moveTarget = seen.position, speed = Config.Monster.ChaseSpeed, caught = nil }
+	return { moveTarget = seen.position, speed = cfg.ChaseSpeed, caught = nil }
 end
 
-local function tickPatrol(state: FSMState, sensed: Sensed): TickResult
+local function tickPatrol(state: FSMState, sensed: Sensed, cfg: Config): TickResult
 	local seen = nearestVisible(sensed)
 	if seen then
-		return beginChase(state, seen)
+		return beginChase(state, seen, cfg)
 	end
 	local reached = state.patrolTarget ~= nil
-		and flatDistance(sensed.rigPosition, state.patrolTarget) < Config.Monster.WaypointReachedDistance
+		and flatDistance(sensed.rigPosition, state.patrolTarget) < cfg.WaypointReachedDistance
 	if state.patrolTarget == nil or reached then
 		if reached and state.patrolTarget then
 			table.insert(state.recentNodes, state.patrolTarget)
-			while #state.recentNodes > Config.Monster.PatrolMemory do
+			while #state.recentNodes > cfg.PatrolMemory do
 				table.remove(state.recentNodes, 1)
 			end
 		end
-		state.patrolTarget = nextPatrolNode(sensed.patrolNodes, sensed.rigPosition, state.recentNodes)
+		state.patrolTarget = nextPatrolNode(sensed.patrolNodes, sensed.rigPosition, state.recentNodes, cfg)
 	end
-	return { moveTarget = state.patrolTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
+	return { moveTarget = state.patrolTarget, speed = cfg.PatrolSpeed, caught = nil }
 end
 
-local function enterSearch(state: FSMState): TickResult
+local function enterSearch(state: FSMState, cfg: Config): TickResult
 	state.name = Enums.MonsterState.Search
 	state.searchElapsed = 0
 	state.searchTarget = state.lastSeen
-	return { moveTarget = state.searchTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
+	return { moveTarget = state.searchTarget, speed = cfg.PatrolSpeed, caught = nil }
 end
 
-local function tickChase(state: FSMState, sensed: Sensed): TickResult
+local function tickChase(state: FSMState, sensed: Sensed, cfg: Config): TickResult
 	-- A catch ends everything this tick.
-	local caught = caughtPlayer(sensed)
+	local caught = caughtPlayer(sensed, cfg)
 	if caught then
-		return { moveTarget = sensed.rigPosition, speed = Config.Monster.ChaseSpeed, caught = caught }
+		return { moveTarget = sensed.rigPosition, speed = cfg.ChaseSpeed, caught = caught }
 	end
 
 	-- Re-acquire / maintain the freshest visible target.
@@ -182,36 +194,36 @@ local function tickChase(state: FSMState, sensed: Sensed): TickResult
 		state.targetUserId = seen.player.UserId
 		state.lastSeen = seen.position
 		state.timeSinceSeen = 0
-		return { moveTarget = seen.position, speed = Config.Monster.ChaseSpeed, caught = nil }
+		return { moveTarget = seen.position, speed = cfg.ChaseSpeed, caught = nil }
 	end
 
 	-- No one visible. If the chased target left the sensed set, give up immediately;
 	-- if it is merely behind a wall (still sensed), burn the grace window.
 	if not targetInSensed(state, sensed) then
-		return enterSearch(state)
+		return enterSearch(state, cfg)
 	end
 	state.timeSinceSeen += sensed.dt
-	if state.timeSinceSeen >= Config.Monster.LoseSightSeconds then
-		return enterSearch(state)
+	if state.timeSinceSeen >= cfg.LoseSightSeconds then
+		return enterSearch(state, cfg)
 	end
-	return { moveTarget = state.lastSeen, speed = Config.Monster.ChaseSpeed, caught = nil }
+	return { moveTarget = state.lastSeen, speed = cfg.ChaseSpeed, caught = nil }
 end
 
-local function tickSearch(state: FSMState, sensed: Sensed): TickResult
+local function tickSearch(state: FSMState, sensed: Sensed, cfg: Config): TickResult
 	-- Re-detection resumes the chase immediately.
 	local seen = nearestVisible(sensed)
 	if seen then
-		return beginChase(state, seen)
+		return beginChase(state, seen, cfg)
 	end
 
 	state.searchElapsed += sensed.dt
-	if state.searchElapsed >= Config.Monster.SearchDuration then
+	if state.searchElapsed >= cfg.SearchDuration then
 		state.name = Enums.MonsterState.Patrol
 		state.patrolTarget = nil
 		state.targetUserId = nil
 		state.lastSeen = nil
 		state.searchTarget = nil
-		return { moveTarget = nil, speed = Config.Monster.PatrolSpeed, caught = nil }
+		return { moveTarget = nil, speed = cfg.PatrolSpeed, caught = nil }
 	end
 
 	-- Investigate: walk to the current search point; on arrival pick a new random
@@ -219,22 +231,22 @@ local function tickSearch(state: FSMState, sensed: Sensed): TickResult
 	local anchor = state.lastSeen or sensed.rigPosition
 	if
 		state.searchTarget == nil
-		or flatDistance(sensed.rigPosition, state.searchTarget) < Config.Monster.WaypointReachedDistance
+		or flatDistance(sensed.rigPosition, state.searchTarget) < cfg.WaypointReachedDistance
 	then
 		local angle = math.random() * math.pi * 2
-		local dist = math.random() * Config.Monster.SearchWanderRadius
+		local dist = math.random() * cfg.SearchWanderRadius
 		state.searchTarget = anchor + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
 	end
-	return { moveTarget = state.searchTarget, speed = Config.Monster.PatrolSpeed, caught = nil }
+	return { moveTarget = state.searchTarget, speed = cfg.PatrolSpeed, caught = nil }
 end
 
-function BunnyFSM.tick(state: FSMState, sensed: Sensed): TickResult
+function BunnyFSM.tick(state: FSMState, sensed: Sensed, cfg: Config): TickResult
 	if state.name == Enums.MonsterState.Chase then
-		return tickChase(state, sensed)
+		return tickChase(state, sensed, cfg)
 	elseif state.name == Enums.MonsterState.Search then
-		return tickSearch(state, sensed)
+		return tickSearch(state, sensed, cfg)
 	end
-	return tickPatrol(state, sensed)
+	return tickPatrol(state, sensed, cfg)
 end
 
 return BunnyFSM

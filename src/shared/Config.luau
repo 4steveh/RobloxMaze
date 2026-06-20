@@ -24,6 +24,8 @@ Config.Flashlight = table.freeze({
 	ToggleKey = Enum.KeyCode.F, -- key that toggles the flashlight on/off
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
 	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
+	Shadows = true, -- the flashlight casts dynamic shadows (monsters throw a shadow before you see them).
+	-- NOTE: requires Lighting.Technology = ShadowMap or Future (a Studio Lighting property; can't be set from a script).
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -117,54 +119,184 @@ Config.HUD = table.freeze({
 	LockedShakeTime = 0.35, -- seconds total
 })
 
--- Monster: the bunny (server-authoritative FSM stalker) --------------------------
--- Speeds in studs/second (player default WalkSpeed is 16 -- ChaseSpeed exceeds it
--- so you cannot outrun it; you must break line of sight). Angles in degrees,
--- distances in studs, durations in seconds.
+-- Monster roster (server-authoritative FSM stalkers) -----------------------------
+-- Speeds in studs/second (player default WalkSpeed is 16). Distances in studs,
+-- angles in degrees, durations in seconds. Structured so multiple species coexist
+-- without sharing one config namespace:
+--   * Shared  -- cross-species movement / pathfinding / anti-camp plumbing.
+--   * Species -- per-species behaviour + rig (the FSM gets Shared U Species as `cfg`).
+--   * Anim    -- per-species procedural-gait params (render-only, client-side).
 Config.Monster = table.freeze({
-	PatrolSpeed = 10, -- WalkSpeed while patrolling / searching
-	ChaseSpeed = 19, -- WalkSpeed while chasing. Base player WalkSpeed 16 still loses,
-	-- but a sprint burst (Config.Player.SprintSpeed) lets a skilled player open a gap
-	-- and break line of sight -- the chase is winnable, not a death sentence.
+	-- Cross-species plumbing. A species slice may override any of these.
+	Shared = table.freeze({
+		RepathInterval = 0.4, -- seconds between PathfindingService recomputations during a chase
+		AgentRadius = 2, -- CreatePath agent radius (fits the corridors)
+		AgentHeight = 5, -- CreatePath agent height
+		WaypointReachedDistance = 4, -- studs: advance to the next path waypoint within this distance
+		StallEpsilon = 0.5, -- studs: movement below this in a tick counts as "not moving"
+		StallTicks = 10, -- consecutive stalled ticks (with a target) that force a repath
+		MaxTickDtFactor = 4, -- clamp a tick's dt to PollInterval*this so a hitch can't skip FSM timers
+		-- Anti-spawn-camp (the root fix for "it kills you then camps the spawn").
+		ResetToPatrolOnCatch = true, -- on a catch, clear the FSM and send the rig home off the kill site
+		PostCatchDormantSeconds = 4, -- seconds after a catch the rig senses nothing -- overlaps the respawn window
+		NoKeySpawnRadius = 30, -- studs: KeySpots within this of any MonsterSpawn are skipped (no key in its lap)
+	}),
 
-	DetectRange = 50, -- max distance the bunny can see a player
-	DetectHalfAngle = 45, -- half the vision cone (so a 90-degree total cone)
-	EyeHeight = 2, -- studs above the rig's HRP that the line-of-sight ray starts from
+	-- Per-species behaviour + rig. The FSM reads (Shared U Species) as its `cfg` slice.
+	Species = table.freeze({
+		-- The bunny: the methodical VISION stalker (escape by breaking line of sight).
+		-- ChaseSpeed exceeds player WalkSpeed 16 so you cannot outrun it, but a sprint
+		-- burst (Config.Player.SprintSpeed 22) lets a skilled player open a gap -- winnable.
+		Bunny = table.freeze({
+			PatrolSpeed = 10, -- WalkSpeed while patrolling / searching
+			ChaseSpeed = 19, -- WalkSpeed while chasing
+			DetectRange = 50, -- max distance the bunny can see a player
+			DetectHalfAngle = 45, -- half the vision cone (so a 90-degree total cone)
+			EyeHeight = 2, -- studs above the rig's HRP that the line-of-sight ray starts from
+			LoseSightSeconds = 4, -- seconds of broken sight (behind a wall) before a chase drops to Search
+			SearchDuration = 6, -- seconds spent searching the last-seen area before giving up
+			SearchWanderRadius = 12, -- studs the bunny pokes around the last-seen point while searching
+			CatchRadius = 5, -- distance to a player that counts as a catch (instant)
+			PatrolMemory = 2, -- patrol nodes remembered as "recently visited" so it tours, not ping-pongs
 
-	LoseSightSeconds = 4, -- seconds of broken sight (behind a wall) before a chase drops to Search
-	SearchDuration = 6, -- seconds spent searching the last-seen area before giving up
-	SearchWanderRadius = 12, -- studs the bunny pokes around the last-seen point while searching
+			-- Rig: the corrupted-mascot mesh (ServerStorage.Assets.<BodyAssetName>). It looms
+			-- taller than the collision box on purpose; pathfinding uses BodySize +
+			-- Shared.AgentRadius, so movement is unchanged.
+			BodySize = Vector3.new(2.5, 3.5, 2.5), -- physics-root (collision box) dimensions
+			BodyColor = Color3.fromRGB(220, 218, 225), -- fallback rig tone (pale, faintly sickly)
+			BodyAssetName = "BunnyBody", -- ServerStorage.Assets mesh (falls back to a primitive proxy if absent)
+			ModelYOffset = 0.75, -- studs lifting the mesh so its feet meet the floor
+			ModelFaceYaw = 0, -- degrees aligning the mesh face with the rig's forward (mesh front is -Z)
+			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a faint red "it's watching" glow that reads in the dark
+			EyeGlowBrightness = 0.7,
+			EyeGlowRange = 7,
+		}),
 
-	CatchRadius = 5, -- distance to a player that counts as a catch (instant)
+		-- The monkey: the near-blind NOISE hunter (escape by going QUIET). It HEARS the
+		-- player's server-computed noise (sprint/fast movement) THROUGH walls; sight is a
+		-- short, wide cone used only to confirm a lunge. The inverse of the bunny -- the
+		-- bunny makes you afraid to be SEEN, the monkey afraid to be HEARD.
+		Monkey = table.freeze({
+			-- Speeds (vs player WalkSpeed 16 / SprintSpeed 22 / bunny ChaseSpeed 19).
+			PatrolSpeed = 11, -- ambling near its nest
+			InvestigateSpeed = 18, -- > WalkSpeed (runs down a walker who stays loud), < SprintSpeed (a sprinter gains)
+			LungeSpeed = 24, -- > SprintSpeed: unoutrunnable BY DESIGN, but sight-gated + short -> counter is "break sight"
 
-	RepathInterval = 0.4, -- seconds between PathfindingService recomputations during a chase
-	AgentRadius = 2, -- CreatePath agent radius (fits the corridors)
-	AgentHeight = 5, -- CreatePath agent height
-	WaypointReachedDistance = 4, -- studs: advance to the next path waypoint within this distance
+			-- Hearing (no LoS -- it hears through walls). effectiveNoise = NoiseLevel x falloff(dist, HearRange).
+			HearRange = 90, -- studs to zero noise (longer than bunny sight: sound travels)
+			HearThreshold = 0.45, -- effectiveNoise to commit to Alert (walking+quiet sits below this -> safe)
+			LoseHearThreshold = 0.25, -- effectiveNoise below which it starts losing the trail
+			LoseHearSeconds = 3, -- seconds below LoseHearThreshold before Investigate -> Search
 
-	PatrolMemory = 2, -- patrol nodes remembered as "recently visited" so it tours rather than ping-pongs
-	StallEpsilon = 0.5, -- studs: movement below this in a tick counts as "not moving"
-	StallTicks = 10, -- consecutive stalled ticks (with a target) that force a repath
+			-- Short sight (lunge confirm only). Generic sight field names so detection is
+			-- species-agnostic: a SHORT, WIDE cone (vs the bunny's long, narrow one).
+			DetectRange = 14, -- studs it can actually SEE
+			DetectHalfAngle = 70, -- wide cone (140 total)
+			EyeHeight = 2, -- studs above the rig's HRP the LoS ray starts from
 
-	BodySize = Vector3.new(2.5, 3.5, 2.5), -- placeholder rig body dimensions
-	BodyColor = Color3.fromRGB(220, 218, 225), -- placeholder rig tone (pale, faintly sickly)
+			AlertDuration = 1.2, -- seconds it freezes facing the source -- the fair "it heard you" tell
+			SearchDuration = 6, -- seconds poking the last point before giving up
+			SearchWanderRadius = 12, -- studs it wanders around the last-heard point
+			InvestigateJitter = 6, -- studs of random lateral weave per repath (slightly dodgeable)
+			CatchRadius = 5, -- distance that counts as a catch (instant)
+			PatrolMemory = 2, -- patrol nodes remembered as "recently visited"
+			RepathInterval = 0.35, -- override Shared: repath faster so the weave stays responsive
 
-	-- Anti-spawn-camp (the root fix for "the bunny kills you then camps the spawn").
-	ResetToPatrolOnCatch = true, -- on a catch, clear the FSM and send the rig home so it can't loiter on the kill site
-	PostCatchDormantSeconds = 4, -- seconds after a catch the rig senses nothing (patrols home) -- overlaps the respawn window
-	NoKeySpawnRadius = 30, -- studs: KeySpots within this of any MonsterSpawn are skipped so a key never spawns in the bunny's lap
+			-- Rig (no mesh yet -> a primitive proxy until Phase 5 builds an articulated body).
+			BodySize = Vector3.new(2.5, 3.5, 2.5), -- <= bunny so corridor fit is identical (do NOT exceed)
+			BodyColor = Color3.fromRGB(60, 48, 44), -- dark/matted: a distinct silhouette from the pale bunny
+			BodyAssetName = "MonkeyBody", -- absent for now -> primitive proxy (MonsterRig handles it)
+			ModelYOffset = 0.75,
+			ModelFaceYaw = 0,
+			EyeGlowColor = Color3.fromRGB(250, 210, 60), -- sickly yellow (vs bunny red): instant species read in the dark
+			EyeGlowBrightness = 0.7,
+			EyeGlowRange = 7,
+		}),
+	}),
 
-	-- Tick robustness.
-	MaxTickDtFactor = 4, -- clamp a tick's dt to PollInterval*this so a server hitch can't skip the FSM past its timers
+	-- Per-species procedural-gait params (render-only; the client MonsterAnimController
+	-- drives each rig's cosmetic Motor6D `Transform` from REPLICATED ground speed -- no
+	-- Animator, no assets, zero bandwidth). This kills the "glides along the floor" read.
+	-- The bunny is a BIPEDAL mascot mesh, so it HOPS as one body (a real bunny gait + a
+	-- deeply unsettling read); cadence is derived from actual travel speed.
+	Anim = table.freeze({
+		Bunny = table.freeze({
+			RefSpeed = 11, -- studs/s at which the move blend saturates (~patrol speed)
+			SpeedSmoothing = 12, -- per-second lerp rate smoothing the measured ground speed
+			WeightSmoothing = 9, -- per-second lerp rate blending move/chase weights (no snaps)
+			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, hop frozen)
+			StrideDistance = 4.4, -- studs of travel per hop -> sets cadence (strideHz = speed / this)
+			ChaseStrideScale = 0.72, -- multiply hop distance in Chase (shorter, more frantic hops)
+			HopHeight = 1.85, -- studs the body arcs up at the apex of a hop (a real, airborne hop)
+			ChaseHopScale = 0.82, -- flatter hops while chasing (lower arc, more horizontal lunge)
+			HopPitch = 0.38, -- rad: nose pitches up on takeoff, down on the descent
+			LandDip = 0.24, -- studs the body compresses downward on the landing beat
+			ForwardSurge = 0.9, -- studs the body lunges forward through the air (then settles)
+			LeanInto = 0.2, -- rad forward crouch-lean, scaled by speed (more in a chase)
+			IdleBreathHz = 0.5, -- breaths/second when idle
+			IdleBreathAmp = 0.1, -- studs of vertical breathing when idle
+			IdleSwayAmp = 0.05, -- rad gentle idle sway/weight-shift
+		}),
 
-	-- Visible model: the corrupted-mascot mesh (ServerStorage.Assets.BunnyBody) welded
-	-- to the invisible physics root. The mesh looms taller than the collision box on
-	-- purpose; pathfinding still uses BodySize + AgentRadius, so movement is unchanged.
-	ModelYOffset = 0.75, -- studs lifting the mesh so its feet meet the floor
-	ModelFaceYaw = 0, -- degrees rotating the mesh so its face aligns with the rig's forward (mesh front is -Z, matching the rig)
-	EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a faint red "it's watching" glow that reads in the dark
-	EyeGlowBrightness = 0.7,
-	EyeGlowRange = 7,
+		-- The monkey: an articulated primitive primate doing a 4-beat BOUNDING gallop
+		-- (front pair + rear pair half-phase apart) with a flexing spine, head thrust,
+		-- and a counter-swaying tail. Its limbs actually step, so it never glides.
+		Monkey = table.freeze({
+			RefSpeed = 14, -- studs/s at which the gait blend saturates (~its investigate speed)
+			SpeedSmoothing = 12, -- per-second lerp rate smoothing the measured ground speed
+			WeightSmoothing = 9, -- per-second lerp rate blending move/chase weights
+			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, gait frozen)
+			StrideDistance = 3.0, -- studs of travel per full bound cycle -> sets cadence
+			ChaseStrideScale = 0.68, -- shorter, faster stride in a chase/investigate (frantic scramble)
+
+			ArmSwing = 0.95, -- rad fore/aft swing of the front limbs
+			LegSwing = 0.85, -- rad fore/aft swing of the rear limbs
+			LimbDesync = 0.06, -- phase offset between L/R of a pair (organic, not perfectly synced)
+			BodyBob = 0.22, -- studs vertical torso bob (2x per stride -- one per plant)
+			BodyPitchFlex = 0.2, -- rad spine flex through the bound
+			BodyRoll = 0.07, -- rad lateral roll
+			ChaseHunch = 0.32, -- rad extra forward hunch while hunting (low, aggressive)
+			HeadBob = 0.16, -- rad head bob with the gait
+			HeadThrust = 0.28, -- rad forward head thrust while hunting
+			TailSway = 0.5, -- rad tail side-sway
+			TailLash = 0.45, -- extra tail motion while hunting
+			IdleBreathHz = 0.6, -- breaths/second when idle
+			IdleBreathAmp = 0.07, -- studs of vertical breathing when idle
+			IdleScanSpeed = 1.3, -- idle head-scan speed (looking around)
+			IdleScanAmp = 0.25, -- rad idle head-scan yaw amplitude
+		}),
+	}),
+})
+
+-- Noise: the monkey's prey signal -----------------------------------------------
+-- Server-computed (by NoiseService) from each player's actual movement SPEED -- so it
+-- is unspoofable (the server owns replicated position). Sprinting is loud; walking is
+-- below the monkey's HearThreshold (0.45) so the default state is genuinely safe;
+-- creeping is near-silent. Noise rises fast but decays slowly, so shedding the monkey
+-- means COMMITTING to being quiet. The monkey hears effectiveNoise = NoiseLevel x
+-- falloff(distance, HearRange). (No client->server remote: movement is already
+-- server-known; this needs no new trusted input.)
+Config.Noise = table.freeze({
+	SprintSpeedRef = 22, -- studs/s at/above which you are "sprinting loud" (player SprintSpeed)
+	WalkSpeedRef = 16, -- studs/s "walking" reference (player WalkSpeed)
+	CreepSpeedRef = 6, -- studs/s below which you are creeping (near-silent)
+	SprintNoise = 1.0, -- noise level at/above sprint speed
+	WalkNoise = 0.35, -- noise at walk speed (BELOW HearThreshold 0.45 -> walking is safe)
+	CreepNoise = 0.1, -- noise while creeping
+	IdleNoise = 0.0, -- noise while still
+	RisePerSecond = 4.0, -- NoiseLevel rises toward target fast (sprinting is immediately loud)
+	DecayPerSecond = 1.3, -- and decays slowly (you must COMMIT to quiet to shed the monkey)
+
+	-- HUD noise meter (NoiseMeterController) -- teaches the monkey's counter: a marker sits
+	-- at the monkey's HearThreshold, so the player SEES when they cross into "audible".
+	MeterWidth = 180, -- px
+	MeterHeight = 14, -- px
+	MeterMargin = 18, -- px from the screen corner (bottom-right, mirroring battery/stamina)
+	MeterBackColor = Color3.fromRGB(25, 25, 30),
+	MeterQuietColor = Color3.fromRGB(110, 200, 120), -- fill while inaudible (safe)
+	MeterLoudColor = Color3.fromRGB(235, 70, 60), -- fill once over the threshold (the monkey hears you)
+	MeterThresholdColor = Color3.fromRGB(240, 220, 120), -- the "audible" marker line
+	MeterLabel = "NOISE",
 })
 
 -- Lighting / atmosphere ---------------------------------------------------------
@@ -229,6 +361,34 @@ Config.Feedback = table.freeze({
 	CaughtText = "CAUGHT!",
 	CaughtColor = Color3.fromRGB(220, 60, 55),
 	LockedTextPrefix = "EXIT LOCKED", -- shown with the live count: "EXIT LOCKED — 3 KEYS NEEDED"
+})
+
+-- Chase FX: the hunt as a visual event ------------------------------------------
+-- Render-only client grade driven by the NEAREST monster that is actively hunting
+-- (Chase/Investigate) and how close it is -- read from replicated rig State + position
+-- (exploit-safe). The ChaseFXController desaturates + red-tints the screen, closes a
+-- vignette, pulses with the threat, and flares that monster's eye-glow. A SEPARATE
+-- ColorCorrection instance, so the static place grade is never corrupted.
+Config.Chase = table.freeze({
+	ThreatStartDistance = 48, -- studs: a hunting monster begins ramping the grade in
+	ThreatMaxDistance = 9, -- studs: full intensity
+	AlertScale = 0.45, -- threat multiplier when a monster is only Alert (heard you) -- a softer dread
+	FadeRate = 4.5, -- per-second lerp toward the target intensity (smooth in AND out)
+
+	Saturation = -0.5, -- ColorCorrection.Saturation at full threat
+	TintColor = Color3.fromRGB(255, 125, 115), -- sickly red wash
+	Contrast = 0.28, -- ColorCorrection.Contrast at full threat
+	BrightnessDrop = -0.07, -- ColorCorrection.Brightness at full threat
+
+	VignetteColor = Color3.fromRGB(22, 0, 0),
+	VignetteThickness = 0.42, -- fraction of the screen each edge band spans
+	VignetteMinTransparency = 0.18, -- most-opaque edge alpha at full threat
+
+	PulseHz = 2.4, -- heartbeat pulse speed (Hz) at full threat
+	PulseAmp = 0.14, -- how much the intensity pulses (fraction)
+
+	EyeGlowBrightness = 4.0, -- a hunting monster's EyeGlow brightness at full threat (base ~0.7)
+	EyeGlowRange = 13, -- ...and its range (base ~7)
 })
 
 -- Audio -------------------------------------------------------------------------
