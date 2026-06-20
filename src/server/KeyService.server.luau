@@ -9,7 +9,9 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local CollectionService = game:GetService("CollectionService")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
@@ -31,15 +33,27 @@ keysFolder.Name = "Keys"
 keysFolder.Parent = Workspace
 
 local function makeKey(position)
-	local key = Instance.new("Part")
+	-- The collectible is the ornate skeleton-key mesh (ServerStorage.Assets.KeyModel) if
+	-- present, else a glowing placeholder block. An eerie green PointLight + the slow spin
+	-- (below) make it read down a dark corridor.
+	local assets = ServerStorage:FindFirstChild("Assets")
+	local meshSrc = assets and assets:FindFirstChild("KeyModel")
+	local key
+	if meshSrc and meshSrc:IsA("BasePart") then
+		key = meshSrc:Clone()
+		key:ClearAllChildren()
+	else
+		key = Instance.new("Part")
+		key.Material = Enum.Material.Neon
+		key.Size = Config.KeyModel.Size
+		key.Color = Config.KeyModel.Color
+	end
 	key.Name = "Key"
 	key.Anchored = true
 	key.CanCollide = false
+	key.CanQuery = false
 	key.CastShadow = false
-	key.Material = Enum.Material.Neon
-	key.Size = Config.KeyModel.Size
-	key.Color = Config.KeyModel.Color
-	key.Position = position + Vector3.new(0, Config.KeyModel.HoverHeight, 0)
+	key.CFrame = CFrame.new(position + Vector3.new(0, Config.KeyModel.HoverHeight, 0))
 
 	local light = Instance.new("PointLight")
 	light.Color = Config.KeyModel.LightColor
@@ -53,6 +67,17 @@ local function makeKey(position)
 	CollectionService:AddTag(key, Tags.ActiveKey)
 	table.insert(liveKeys, key)
 end
+
+-- A slow hypnotic spin so a glowing key catches the eye down a corridor. Anchored +
+-- rotation about its own centre, so the pickup's flat position is unchanged.
+RunService.Heartbeat:Connect(function(dt)
+	local step = CFrame.Angles(0, Config.KeyModel.SpinSpeed * dt, 0)
+	for _, key in liveKeys do
+		if key.Parent then
+			key.CFrame = key.CFrame * step
+		end
+	end
+end)
 
 -- Round start (once): place keys at a random subset of the KeySpot markers, biased
 -- away from any MonsterSpawn so a required key never spawns inside the bunny's

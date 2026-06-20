@@ -79,13 +79,15 @@ export type MonkeyParams = {
 	MinMoveSpeed: number,
 	StrideDistance: number,
 	ChaseStrideScale: number,
+	GallopHeight: number,
+	GallopChaseScale: number,
+	GallopSurge: number,
+	GallopPitch: number,
+	GallopRoll: number,
+	GallopHunch: number,
 	ArmSwing: number,
 	LegSwing: number,
 	LimbDesync: number,
-	BodyBob: number,
-	BodyPitchFlex: number,
-	BodyRoll: number,
-	ChaseHunch: number,
 	HeadBob: number,
 	HeadThrust: number,
 	TailSway: number,
@@ -105,32 +107,35 @@ function Gaits.monkey(phase: number, clock: number, w: Weights, p: MonkeyParams)
 	local chase = math.clamp(w.chase, 0, 1)
 	local idle = 1 - move
 
-	-- Bound: arms lead, legs follow a half-cycle later. A small L/R desync adds life.
+	-- WHOLE-BODY GALLOP (the live path -- the monkey is the gorilla mesh on one `Body`
+	-- joint). One suspension arc per stride: the body leaps up + forward (feet off the
+	-- floor = the anti-glide), the spine rocks fore/aft, with a loping roll and a hunch
+	-- that deepens while hunting. Flatter + more horizontal in a chase.
+	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0, one suspension per stride
+	local gallopH = p.GallopHeight * (1 - chase * (1 - p.GallopChaseScale))
+	local bobY = arc * gallopH * move
+	local surge = -p.GallopSurge * arc * move -- -Z is forward
+	local rock = p.GallopPitch * math.sin(phase * TAU) * move -- spine rock fore/aft
+	local hunch = p.GallopHunch * (0.4 + 0.6 * chase) * move
+	local roll = math.sin(phase * TAU) * p.GallopRoll * move
+	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
+
+	-- Articulated-limb fallback (no-mesh primate): arms lead, legs follow half a cycle,
+	-- a small L/R desync; head bob/thrust + scan; tail sway/lash. Ignored on the mesh rig
+	-- (those joints don't exist there), so it's free to keep for the proxy.
 	local armL = math.sin(phase * TAU) * p.ArmSwing * move
 	local armR = math.sin((phase + p.LimbDesync) * TAU) * p.ArmSwing * move
 	local legPhase = (phase + 0.5) % 1
 	local legL = math.sin(legPhase * TAU) * p.LegSwing * move
 	local legR = math.sin((legPhase + p.LimbDesync) * TAU) * p.LegSwing * move
-
-	-- Torso: vertical bob twice a cycle (one per plant), a flexing spine, a slight roll,
-	-- and a deeper hunch while hunting.
-	local bob = -math.abs(math.sin(phase * TAU)) * p.BodyBob * move
-	local flex = math.sin(phase * TAU) * p.BodyPitchFlex * move
-	local roll = math.sin(phase * TAU) * p.BodyRoll * move
-	local hunch = p.ChaseHunch * chase
-	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
-
-	-- Head: bob with the gait, thrust forward while hunting, slow scan when idle.
 	local headBob = math.sin(phase * TAU + 1.0) * p.HeadBob * move
 	local headThrust = p.HeadThrust * chase
 	local scan = math.sin(clock * p.IdleScanSpeed) * p.IdleScanAmp * idle
-
-	-- Tail: side-sway with the gait, lashing while hunting, idle drift when stopped.
 	local tail = math.sin(phase * TAU) * (p.TailSway + p.TailLash * chase) * move
 		+ math.sin(clock * 1.1) * p.TailSway * 0.5 * idle
 
 	return {
-		Body = CFrame.new(0, bob + breath, 0) * CFrame.Angles(flex + hunch, roll * 0.5, roll),
+		Body = CFrame.new(0, bobY + breath, surge) * CFrame.Angles(rock + hunch, roll * 0.5, roll),
 		CHead = CFrame.Angles(headBob - headThrust, scan, 0),
 		ArmL = CFrame.Angles(armL, 0, 0),
 		ArmR = CFrame.Angles(armR, 0, 0),
