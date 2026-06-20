@@ -88,15 +88,14 @@ scream.Volume = Config.Audio.Stingers.JumpscareVolume
 scream.SoundGroup = AudioGroups.get("Master")
 scream.Parent = SoundService
 
-local function findMonsterBody()
+local function findMonsterRig()
 	local monsters = Workspace:FindFirstChild("Monsters")
 	if not monsters then
 		return nil
 	end
 	for _, rig in monsters:GetChildren() do
-		local body = rig:FindFirstChild("Body")
-		if body and body:IsA("BasePart") then
-			return body
+		if rig:FindFirstChild("Body") then
+			return rig
 		end
 	end
 	return nil
@@ -107,16 +106,30 @@ local function populateViewport()
 	if old then
 		old:Destroy()
 	end
-	local src = findMonsterBody()
-	if not src then
+	local rig = findMonsterRig()
+	if not rig then
 		return false
 	end
-	local body = src:Clone()
-	body:ClearAllChildren()
-	body.Name = "ScareModel"
-	body.Anchored = true
-	body.CFrame = CFrame.new(0, 0, 0)
-	body.Parent = viewport
+	-- The rigs are MULTI-PART now: centre on the cosmetic head (the face) and clone every
+	-- visible cosmetic part, so the whole creature lunges at the camera (not just a torso).
+	local head = rig:FindFirstChild("CHead") or rig:FindFirstChild("Body")
+	if not (head and head:IsA("BasePart")) then
+		return false
+	end
+	local headCF = head.CFrame
+	local container = Instance.new("Model")
+	container.Name = "ScareModel"
+	for _, part in ipairs(rig:GetDescendants()) do
+		if part:IsA("BasePart") and part.Transparency < 1 and part.Name ~= "HumanoidRootPart" then
+			local c = part:Clone()
+			c:ClearAllChildren()
+			c.Anchored = true
+			c.CanCollide = false
+			c.CFrame = headCF:ToObjectSpace(part.CFrame) -- head at the origin, facing -Z
+			c.Parent = container
+		end
+	end
+	container.Parent = viewport
 	return true
 end
 
@@ -145,7 +158,7 @@ caughtRemote.OnClientEvent:Connect(function()
 
 	-- Lunge + shake for the first ~0.55s, then hold the face for the rest of the window.
 	task.spawn(function()
-		local faceY = 1.6
+		local faceY = 0.2 -- the cloned creature is centred on its head at the viewport origin
 		local elapsed = 0
 		local lunge = 0.55
 		while elapsed < lunge and mine == scareToken do
