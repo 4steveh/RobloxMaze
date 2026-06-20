@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit gate — formatting + lint must be clean before a commit lands.
+# Enforces the CLAUDE.md rule: "Run StyLua and Selene before any change is done."
+# Enable once per clone:  make hooks   (or:  git config core.hooksPath .githooks)
+set -euo pipefail
+
+# Rokit shims aren't on PATH in non-interactive git hooks; add them.
+export PATH="$HOME/.rokit/bin:$PATH"
+
+if ! command -v stylua >/dev/null 2>&1 || ! command -v selene >/dev/null 2>&1; then
+	echo "pre-commit: stylua/selene not on PATH — run 'rokit install' (or 'make install')." >&2
+	exit 1
+fi
+
+echo "pre-commit: stylua --check ."
+if ! stylua --check .; then
+	echo "pre-commit: formatting check failed. Run 'stylua .' (or 'make fmt'), then re-stage." >&2
+	exit 1
+fi
+
+echo "pre-commit: selene ."
+if ! selene .; then
+	echo "pre-commit: selene found issues. Fix them, then re-commit." >&2
+	exit 1
+fi
+
+echo "pre-commit: OK"
