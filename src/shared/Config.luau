@@ -198,6 +198,8 @@ Config.Monster = table.freeze({
 			AlertDuration = 1.2, -- seconds it freezes facing the source -- the fair "it heard you" tell
 			SearchDuration = 6, -- seconds poking the last point before giving up
 			SearchWanderRadius = 12, -- studs it wanders around the last-heard point
+			NestWanderRadius = 22, -- studs it paces around its MonkeySpawn nest while patrolling
+			-- (it GUARDS its territory -- it does NOT roam the maze like the bunny, so they don't shadow each other)
 			InvestigateJitter = 6, -- studs of random lateral weave per repath (slightly dodgeable)
 			CatchRadius = 5, -- distance that counts as a catch (instant)
 			PatrolMemory = 2, -- patrol nodes remembered as "recently visited"

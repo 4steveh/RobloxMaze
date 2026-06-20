@@ -20,11 +20,13 @@ export type PlayerSense = {
 }
 
 -- The full sensed world handed to an FSM tick (no Instance handles beyond Players,
--- so the FSM stays pure and unit-testable).
+-- so the FSM stays pure and unit-testable). `homePosition` is the rig's spawn/nest --
+-- the bunny ignores it (it roams the patrolNodes), the monkey paces near it (its territory).
 export type Sensed = {
 	dt: number,
 	rigPosition: Vector3,
 	patrolNodes: { Vector3 },
+	homePosition: Vector3,
 	players: { PlayerSense },
 }
 

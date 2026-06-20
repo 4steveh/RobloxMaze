@@ -326,6 +326,7 @@ while true do
 				dt = dt,
 				rigPosition = root.Position,
 				patrolNodes = nodes,
+				homePosition = (inst.spawnPart and inst.spawnPart.Position) or root.Position, -- the nest/spawn
 				players = if dormant then {} else sensePlayers(rig, inst.cfg),
 			}
 			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)

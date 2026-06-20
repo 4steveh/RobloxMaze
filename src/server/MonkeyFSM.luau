@@ -30,6 +30,7 @@ export type Config = {
 	AlertDuration: number,
 	SearchDuration: number,
 	SearchWanderRadius: number,
+	NestWanderRadius: number,
 	InvestigateJitter: number,
 	CatchRadius: number,
 	WaypointReachedDistance: number,
@@ -108,39 +109,6 @@ local function caughtPlayer(sensed: Sensed, cfg: Config): Player?
 	return best
 end
 
--- Nearest node not within reach of any recently-visited node (so it tours its area).
-local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vector3 }, cfg: Config): Vector3?
-	local best, bestDist = nil, math.huge
-	for _, node in nodes do
-		local isRecent = false
-		for _, r in recent do
-			if flatDistance(node, r) < cfg.WaypointReachedDistance then
-				isRecent = true
-				break
-			end
-		end
-		if not isRecent then
-			local d = flatDistance(node, from)
-			if d < bestDist then
-				best, bestDist = node, d
-			end
-		end
-	end
-	if best == nil then
-		-- every node recent: fall back to the nearest node that is not the most recent.
-		local exclude = recent[#recent]
-		for _, node in nodes do
-			if not (exclude and flatDistance(node, exclude) < cfg.WaypointReachedDistance) then
-				local d = flatDistance(node, from)
-				if d < bestDist then
-					best, bestDist = node, d
-				end
-			end
-		end
-	end
-	return best
-end
-
 function MonkeyFSM.newState(): FSMState
 	return {
 		name = Enums.MonsterState.Patrol,
@@ -194,16 +162,17 @@ local function tickPatrol(state: FSMState, sensed: Sensed, cfg: Config): TickRes
 	if heard then
 		return enterAlert(state, heard)
 	end
-	local reached = state.patrolTarget ~= nil
-		and flatDistance(sensed.rigPosition, state.patrolTarget) < cfg.WaypointReachedDistance
-	if state.patrolTarget == nil or reached then
-		if reached and state.patrolTarget then
-			table.insert(state.recentNodes, state.patrolTarget)
-			while #state.recentNodes > cfg.PatrolMemory do
-				table.remove(state.recentNodes, 1)
-			end
-		end
-		state.patrolTarget = nextPatrolNode(sensed.patrolNodes, sensed.rigPosition, state.recentNodes, cfg)
+	-- TERRITORIAL: the monkey PACES within NestWanderRadius of its nest -- it guards its
+	-- den and never roams the maze like the bunny, so the two never shadow each other. On
+	-- arrival it picks a fresh nearby point; if it has strayed (after an investigation),
+	-- aiming back near home walks it home.
+	if
+		state.patrolTarget == nil
+		or flatDistance(sensed.rigPosition, state.patrolTarget) < cfg.WaypointReachedDistance
+	then
+		local a = math.random() * math.pi * 2
+		local d = math.random() * cfg.NestWanderRadius
+		state.patrolTarget = sensed.homePosition + Vector3.new(math.cos(a) * d, 0, math.sin(a) * d)
 	end
 	return { moveTarget = state.patrolTarget, speed = cfg.PatrolSpeed, caught = nil }
 end
