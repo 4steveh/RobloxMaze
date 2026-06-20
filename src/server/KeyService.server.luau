@@ -56,7 +56,7 @@ end
 
 -- Round start (once): place keys at a random subset of the KeySpot markers, biased
 -- away from any MonsterSpawn so a required key never spawns inside the bunny's
--- detection bubble (see Config.Monster.NoKeySpawnRadius).
+-- detection bubble (see Config.Monster.Shared.NoKeySpawnRadius).
 local function shuffleInPlace(t)
 	for i = #t, 2, -1 do
 		local j = rng:NextInteger(1, i)
@@ -75,7 +75,8 @@ local function spawnRoundKeys()
 		for _, sp in spawnPositions do
 			-- Flat XZ distance, consistent with the bunny's ground-plane sensing.
 			if
-				(Vector3.new(pos.X, 0, pos.Z) - Vector3.new(sp.X, 0, sp.Z)).Magnitude < Config.Monster.NoKeySpawnRadius
+				(Vector3.new(pos.X, 0, pos.Z) - Vector3.new(sp.X, 0, sp.Z)).Magnitude
+				< Config.Monster.Shared.NoKeySpawnRadius
 			then
 				return true
 			end

@@ -1,14 +1,16 @@
 --!nonstrict
 -- MonsterService.server.luau
--- Owns the bunny: builds a valid procedural placeholder rig at each MonsterSpawn,
--- and (in later steps) senses players, drives PathfindingService movement off the
--- Config.Spatial.PollInterval cadence, ticks the pure BunnyFSM, and routes a catch
--- into the existing SpawnService death/respawn. Server-authoritative; the client
--- only renders the rig and plays the jumpscare via the MonsterCaught remote.
+-- Owns the monster ROSTER: builds a rig per species at its spawn markers, senses each
+-- player (vision cone + LoS for sight; server-computed noise for hearing) off the
+-- Config.Spatial.PollInterval cadence, ticks that rig's pure FSM with its resolved cfg,
+-- drives PathfindingService movement, and routes a catch into the SpawnService
+-- death/respawn. Species-agnostic: a `SPECIES` dispatch table maps each Enums.MonsterType
+-- to its { fsm, cfg, spawnTag }, and each rig stores its own fsm/cfg, so the bunny
+-- (vision stalker) and monkey (noise hunter) run side by side through one loop.
+-- Server-authoritative; the client only renders the rig and plays the jumpscare cue.
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 
@@ -20,6 +22,8 @@ local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 local Remotes = require(ReplicatedStorage.Remotes)
 local BunnyFSM = require(script.Parent.BunnyFSM)
+local MonkeyFSM = require(script.Parent.MonkeyFSM)
+local MonsterRig = require(script.Parent.MonsterRig)
 
 local STATE_ATTRIBUTE = "State" -- on the rig model: current Enums.MonsterState (observability/testing)
 
@@ -31,84 +35,36 @@ Remotes.init()
 local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
 
--- A VALID procedural Humanoid rig: a HumanoidRootPart body + a welded Head (a
--- Humanoid needs a Head to be a living character) + a Humanoid with RequiresNeck
--- off and an explicit HipHeight so it stands on the floor and Humanoid:MoveTo can
--- walk it. No art assets -- Config.Monster.Body* are placeholders.
-local function createRig(spawnPart): Model
-	local rig = Instance.new("Model")
-	rig.Name = Enums.MonsterType.Bunny
-
-	-- Invisible physics root: the collision box pathfinding/movement use. It stays the
-	-- BodySize box so AgentRadius and corridor fit are unchanged; the visible body is
-	-- the welded mascot mesh below.
-	local root = Instance.new("Part")
-	root.Name = "HumanoidRootPart"
-	root.Size = Config.Monster.BodySize
-	root.Transparency = 1
-	root.Anchored = false
-	root.CanCollide = true
-	root.Parent = rig
-
-	-- Invisible Head (a Humanoid needs a Head to count as a living character); also
-	-- hosts the eye-glow light at roughly face height.
-	local head = Instance.new("Part")
-	head.Name = "Head"
-	head.Shape = Enum.PartType.Ball
-	head.Size = Vector3.new(1, 1, 1)
-	head.Transparency = 1
-	head.CanCollide = false
-	head.Massless = true -- doesn't affect the Humanoid's balance
-	head.Parent = rig
-
-	local weld = Instance.new("Weld")
-	weld.Part0 = root
-	weld.Part1 = head
-	weld.C0 = CFrame.new(0, Config.Monster.BodySize.Y / 2 + 0.5, 0)
-	weld.Parent = root
-
-	-- Visible body: the corrupted-mascot mesh, welded to the invisible root so it moves
-	-- with the physics body but never affects pathfinding (CanCollide off, Massless).
-	local body = ServerStorage.Assets.BunnyBody:Clone()
-	body.Name = "Body"
-	body.Anchored = false
-	body.CanCollide = false
-	body.CanQuery = false
-	body.Massless = true
-	body.Parent = rig
-	local bodyWeld = Instance.new("Weld")
-	bodyWeld.Part0 = root
-	bodyWeld.Part1 = body
-	bodyWeld.C0 = CFrame.new(0, Config.Monster.ModelYOffset, 0)
-		* CFrame.Angles(0, math.rad(Config.Monster.ModelFaceYaw), 0)
-	bodyWeld.Parent = root
-
-	-- A faint red eye-glow so it reads as "watching" in the dark.
-	local glow = Instance.new("PointLight")
-	glow.Name = "EyeGlow"
-	glow.Color = Config.Monster.EyeGlowColor
-	glow.Brightness = Config.Monster.EyeGlowBrightness
-	glow.Range = Config.Monster.EyeGlowRange
-	glow.Parent = head
-
-	local humanoid = Instance.new("Humanoid")
-	humanoid.RequiresNeck = false -- single-body placeholder has no Neck joint
-	humanoid.HipHeight = Config.Monster.BodySize.Y / 2 -- float the root above the floor so it can walk
-	humanoid.AutoRotate = true
-	humanoid.Parent = rig
-
-	rig.PrimaryPart = root
-	rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, Config.Monster.BodySize.Y, 0)))
-	rig.Parent = monstersFolder
-	rig:SetAttribute(STATE_ATTRIBUTE, Enums.MonsterState.Patrol)
-
-	-- Keep physics authority on the server so server-driven MoveTo is honored.
-	-- pcall: SetNetworkOwner can raise on an unanchored part mid-construction.
-	pcall(function()
-		root:SetNetworkOwner(nil)
-	end)
-	return rig
+-- Resolve a species' Config slice: the Shared cross-species plumbing overlaid with
+-- the species' own behaviour/rig fields (the species wins on any overlap). This is
+-- the `cfg` we inject into the FSM (BunnyFSM.tick(state, sensed, cfg)) and read for
+-- the rig/mover, so multiple species coexist without one flat config namespace.
+local function resolveSpecies(name: string)
+	local M = Config.Monster
+	local cfg = table.clone(M.Shared) -- mutable shallow copy of the frozen Shared slice
+	for k, v in M.Species[name] do
+		cfg[k] = v
+	end
+	return cfg
 end
+
+-- Cross-species constants the tick loop reads directly (not per-rig).
+local SHARED = Config.Monster.Shared
+
+-- The roster: each species -> its FSM module, resolved cfg slice, and spawn tag. Adding
+-- a species is one row here (+ its Config slice + FSM module + a placed spawn marker).
+local SPECIES = {
+	[Enums.MonsterType.Bunny] = {
+		fsm = BunnyFSM,
+		cfg = resolveSpecies(Enums.MonsterType.Bunny),
+		spawnTag = Tags.MonsterSpawn,
+	},
+	[Enums.MonsterType.Monkey] = {
+		fsm = MonkeyFSM,
+		cfg = resolveSpecies(Enums.MonsterType.Monkey),
+		spawnTag = Tags.MonkeySpawn,
+	},
+}
 
 -- Raycast params reused each sense: ignore the rig and all player characters, so
 -- only world geometry (walls) can block line of sight.
@@ -125,14 +81,16 @@ local function sightParams(rig: Model): RaycastParams
 	return params
 end
 
--- Build the FSM's player list: every eligible living player with a visible flag.
--- Eligible = living HRP, NOT in a SafeRoom, NOT won. (A brand-new player whose
--- InSafeRoom/GameState attributes are still nil is intentionally treated as
--- eligible -- not-safe / not-won.) Visible = within DetectRange of the root,
--- inside the DetectHalfAngle cone, and unobstructed by walls.
-local function sensePlayers(rig: Model): { any }
+-- Build a rig's sensed player list: each eligible living player with a `visible` flag
+-- (the species' sight cone + LoS) and a `noise` value (effectiveNoise = the player's
+-- server-computed NoiseLevel x distance falloff over cfg.HearRange -- only for a species
+-- that hears, i.e. cfg.HearRange set; nil for the deaf bunny). Eligible = living HRP, NOT
+-- in a SafeRoom / Won / RespawnGrace (a brand-new player whose attributes are still nil
+-- is treated as eligible). SafeRoom/Won/Grace also silences the monkey (those players
+-- leave the sensed set entirely, so it can neither see nor hear them).
+local function sensePlayers(rig: Model, cfg): { any }
 	local root = rig.PrimaryPart
-	local eyePos = root.Position + Vector3.new(0, Config.Monster.EyeHeight, 0)
+	local eyePos = root.Position + Vector3.new(0, cfg.EyeHeight, 0)
 	local facing = root.CFrame.LookVector
 	local params = sightParams(rig)
 
@@ -144,9 +102,8 @@ local function sensePlayers(rig: Model): { any }
 		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
 			continue
 		end
-		-- Respawn invulnerability: a freshly (re)spawned player is invisible to the
-		-- bunny for Config.Respawn.InvulnSeconds, so it can never instantly re-catch
-		-- at the spawn point. The root anti-spawn-camp guard (see SpawnService).
+		-- Respawn invulnerability: a freshly (re)spawned player is invisible to every
+		-- monster for Config.Respawn.InvulnSeconds (the root anti-spawn-camp guard).
 		if player:GetAttribute(Attributes.RespawnGrace) == true then
 			continue
 		end
@@ -155,20 +112,28 @@ local function sensePlayers(rig: Model): { any }
 			continue
 		end
 
-		-- Range/cone from the root (consistent with the FSM's flat proximity).
 		local toPlayer = hrp.Position - root.Position
 		local distance = toPlayer.Magnitude
+
+		-- Sight: within cfg.DetectRange, inside the cone, unobstructed by a wall.
 		local visible = false
-		if distance <= Config.Monster.DetectRange and distance > 0 then
+		if distance <= cfg.DetectRange and distance > 0 then
 			local angle = math.deg(math.acos(math.clamp(facing:Dot(toPlayer.Unit), -1, 1)))
-			if angle <= Config.Monster.DetectHalfAngle then
-				-- LoS ray from the raised eye to the player's HRP; hit == nil => clear.
+			if angle <= cfg.DetectHalfAngle then
 				local ray = hrp.Position - eyePos
-				local hit = Workspace:Raycast(eyePos, ray, params)
-				visible = hit == nil
+				visible = Workspace:Raycast(eyePos, ray, params) == nil
 			end
 		end
-		table.insert(result, { player = player, position = hrp.Position, visible = visible })
+
+		-- Hearing (species with cfg.HearRange only): effectiveNoise = NoiseLevel x linear
+		-- distance falloff. NO line of sight -- it hears straight through walls.
+		local noise = nil
+		if cfg.HearRange then
+			local level = player:GetAttribute(Attributes.NoiseLevel) or 0
+			noise = level * math.clamp(1 - distance / cfg.HearRange, 0, 1)
+		end
+
+		table.insert(result, { player = player, position = hrp.Position, visible = visible, noise = noise })
 	end
 	return result
 end
@@ -177,11 +142,11 @@ end
 -- target, recomputing at most every RepathInterval (ComputeAsync yields). Detects
 -- stalls (wedged on a corner) and forces a repath, and falls back to steering
 -- straight at the target when no path is available.
-local function createMover(rig: Model)
+local function createMover(rig: Model, cfg)
 	local humanoid = rig:FindFirstChildOfClass("Humanoid")
 	local path = PathfindingService:CreatePath({
-		AgentRadius = Config.Monster.AgentRadius,
-		AgentHeight = Config.Monster.AgentHeight,
+		AgentRadius = cfg.AgentRadius,
+		AgentHeight = cfg.AgentHeight,
 		AgentCanJump = false,
 	})
 	local waypoints = {}
@@ -218,19 +183,19 @@ local function createMover(rig: Model)
 		end
 
 		-- Stall recovery: barely moving toward a real target -> force a repath.
-		if lastPos and (root.Position - lastPos).Magnitude < Config.Monster.StallEpsilon then
+		if lastPos and (root.Position - lastPos).Magnitude < cfg.StallEpsilon then
 			stalledTicks += 1
 		else
 			stalledTicks = 0
 		end
 		lastPos = root.Position
-		if stalledTicks >= Config.Monster.StallTicks then
+		if stalledTicks >= cfg.StallTicks then
 			sinceRepath = math.huge
 			stalledTicks = 0
 		end
 
 		sinceRepath += dt
-		if sinceRepath >= Config.Monster.RepathInterval then
+		if sinceRepath >= cfg.RepathInterval then
 			repath(target)
 		end
 
@@ -240,10 +205,7 @@ local function createMover(rig: Model)
 		end
 		while waypointIndex <= #waypoints do
 			local wp = waypoints[waypointIndex].Position
-			if
-				(Vector3.new(wp.X, root.Position.Y, wp.Z) - root.Position).Magnitude
-				< Config.Monster.WaypointReachedDistance
-			then
+			if (Vector3.new(wp.X, root.Position.Y, wp.Z) - root.Position).Magnitude < cfg.WaypointReachedDistance then
 				waypointIndex += 1
 			else
 				break
@@ -276,28 +238,34 @@ end
 
 local instances = {} -- { { rig = Model, state = FSMState, mover = Mover } }
 
-local warnedNoSpawn = false
-local function spawnBunnies()
-	local spawns = Discovery.getAll(Tags.MonsterSpawn)
-	if #spawns == 0 then
-		if not warnedNoSpawn then
-			warnedNoSpawn = true
-			warn("[MonsterService] No MonsterSpawn marker found; no bunny spawned.")
+local warnedNoSpawn = {} -- [species] = true once we've warned about a missing spawn marker
+local function spawnMonsters()
+	for speciesName, def in SPECIES do
+		local spawns = Discovery.getAll(def.spawnTag)
+		if #spawns == 0 then
+			if not warnedNoSpawn[speciesName] then
+				warnedNoSpawn[speciesName] = true
+				warn(`[MonsterService] No {def.spawnTag} marker found; no {speciesName} spawned.`)
+			end
+			continue
 		end
-		return
-	end
-	for _, spawnPart in spawns do
-		if spawnPart:IsA("BasePart") then
-			local rig = createRig(spawnPart)
-			table.insert(instances, {
-				rig = rig,
-				state = BunnyFSM.newState(),
-				mover = createMover(rig),
-				spawnPart = spawnPart, -- home to repel the rig to on a catch
-				dormantUntil = 0, -- os.clock() until which this rig senses nothing (post-catch)
-				prevState = Enums.MonsterState.Patrol, -- last state we fired MonsterStateChanged for
-				prevTargetUserId = nil, -- the player it was chasing last tick (so a fade fires to them)
-			})
+		for _, spawnPart in spawns do
+			if spawnPart:IsA("BasePart") then
+				local rig = MonsterRig.build(speciesName, def.cfg, spawnPart, monstersFolder)
+				rig:SetAttribute(STATE_ATTRIBUTE, Enums.MonsterState.Patrol) -- MonsterService owns State from here
+				table.insert(instances, {
+					rig = rig,
+					fsm = def.fsm, -- this rig's brain (BunnyFSM / MonkeyFSM)
+					cfg = def.cfg, -- this rig's resolved Config slice
+					species = speciesName,
+					state = def.fsm.newState(),
+					mover = createMover(rig, def.cfg),
+					spawnPart = spawnPart, -- home to repel the rig to on a catch
+					dormantUntil = 0, -- os.clock() until which this rig senses nothing (post-catch)
+					prevState = Enums.MonsterState.Patrol, -- last state we fired MonsterStateChanged for
+					prevTargetUserId = nil, -- the player it was chasing last tick (so a fade fires to them)
+				})
+			end
 		end
 	end
 end
@@ -318,17 +286,17 @@ local function catch(inst, player: Player)
 	humanoid.Health = 0
 	caughtRemote:FireClient(player)
 
-	if Config.Monster.ResetToPatrolOnCatch then
-		inst.state = BunnyFSM.newState()
+	if inst.cfg.ResetToPatrolOnCatch then
+		inst.state = inst.fsm.newState()
 		local spawnPart = inst.spawnPart
 		if spawnPart and inst.rig.PrimaryPart then
-			inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, Config.Monster.BodySize.Y, 0)))
+			inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, inst.cfg.BodySize.Y, 0)))
 		end
-		inst.dormantUntil = os.clock() + Config.Monster.PostCatchDormantSeconds
+		inst.dormantUntil = os.clock() + inst.cfg.PostCatchDormantSeconds
 	end
 end
 
-spawnBunnies()
+spawnMonsters()
 
 -- Server-authoritative tick on the shared poll cadence (never Touched). dt comes
 -- from os.clock deltas so FSM timers stay accurate even when ComputeAsync yields.
@@ -337,8 +305,8 @@ while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
 	-- Clamp dt: a server hitch (ComputeAsync yields, GC pause) must not let a single
-	-- tick advance the FSM past LoseSightSeconds / SearchDuration in one jump.
-	local dt = math.min(now - lastClock, Config.Spatial.PollInterval * Config.Monster.MaxTickDtFactor)
+	-- tick advance an FSM past its timers in one jump.
+	local dt = math.min(now - lastClock, Config.Spatial.PollInterval * SHARED.MaxTickDtFactor)
 	lastClock = now
 	local nodes = patrolNodePositions()
 	for _, inst in instances do
@@ -358,14 +326,24 @@ while true do
 				dt = dt,
 				rigPosition = root.Position,
 				patrolNodes = nodes,
-				players = if dormant then {} else sensePlayers(rig),
+				players = if dormant then {} else sensePlayers(rig, inst.cfg),
 			}
-			local result = BunnyFSM.tick(inst.state, sensed)
+			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				humanoid.WalkSpeed = result.speed
 			end
 			inst.mover.update(result.moveTarget, dt)
+
+			-- Face-while-standing (the monkey's Alert "it heard you" snap): when an FSM
+			-- returns a faceTarget and no movement, smoothly yaw the rig toward it.
+			if result.moveTarget == nil and result.faceTarget then
+				local from = root.Position
+				local look = Vector3.new(result.faceTarget.X, from.Y, result.faceTarget.Z)
+				if (look - from).Magnitude > 0.1 then
+					root.CFrame = root.CFrame:Lerp(CFrame.lookAt(from, look), 0.35)
+				end
+			end
 			rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
 
 			-- Per-player chase signal: when this rig's FSM state changes, tell the chased

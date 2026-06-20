@@ -15,8 +15,9 @@ local Tags = {
 	ActiveKey = "ActiveKey", -- a key part live in the world this round; the client compass beacons these
 
 	-- Monster markers.
-	MonsterSpawn = "MonsterSpawn", -- where monsters enter the maze
-	PatrolPoint = "PatrolPoint", -- nodes a patrolling monster walks between
+	MonsterSpawn = "MonsterSpawn", -- where the bunny enters the maze
+	MonkeySpawn = "MonkeySpawn", -- where the monkey nests/enters (placed in a different region)
+	PatrolPoint = "PatrolPoint", -- nodes a patrolling monster walks between (shared graph)
 	AmbushNode = "AmbushNode", -- scripted scare / ambush locations
 
 	-- Atmosphere: practical lights the client FlickerController makes flicker.

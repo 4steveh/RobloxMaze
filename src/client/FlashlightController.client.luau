@@ -50,6 +50,7 @@ local function setupLight(character)
 	spot.Range = Config.Flashlight.Range
 	spot.Angle = Config.Flashlight.Angle
 	spot.Brightness = Config.Flashlight.Brightness
+	spot.Shadows = Config.Flashlight.Shadows -- monsters throw a shadow before you see them (needs ShadowMap/Future)
 	spot.Face = Enum.NormalId.Front
 	-- Head-aligned for now: the light points where the head faces. Camera-aligned
 	-- aiming -- updating the light's CFrame each RenderStep to follow the camera --
