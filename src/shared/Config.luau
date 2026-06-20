@@ -44,6 +44,7 @@ Config.KeyModel = table.freeze({
 	LightBrightness = 5,
 	LightRange = 16,
 	HoverHeight = 3, -- studs above the KeySpot marker
+	SpinSpeed = 1.1, -- rad/s the floating key slowly rotates (draws the eye)
 })
 
 -- Spatial detection -------------------------------------------------------------
@@ -205,9 +206,9 @@ Config.Monster = table.freeze({
 			-- Rig (no mesh yet -> a primitive proxy until Phase 5 builds an articulated body).
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- <= bunny so corridor fit is identical (do NOT exceed)
 			BodyColor = Color3.fromRGB(60, 48, 44), -- dark/matted: a distinct silhouette from the pale bunny
-			BodyAssetName = "MonkeyBody", -- absent for now -> primitive proxy (MonsterRig handles it)
-			ModelYOffset = 0.75,
-			ModelFaceYaw = 0,
+			BodyAssetName = "MonkeyBody", -- the AI-generated hunched-gorilla mesh (else a primitive proxy)
+			ModelYOffset = -0.4, -- drops the short gorilla mesh so its hands/feet meet the floor
+			ModelFaceYaw = 0, -- mesh front is -Z (matches the rig forward)
 			EyeGlowColor = Color3.fromRGB(250, 210, 60), -- sickly yellow (vs bunny red): instant species read in the dark
 			EyeGlowBrightness = 0.7,
 			EyeGlowRange = 7,
@@ -242,27 +243,33 @@ Config.Monster = table.freeze({
 		-- (front pair + rear pair half-phase apart) with a flexing spine, head thrust,
 		-- and a counter-swaying tail. Its limbs actually step, so it never glides.
 		Monkey = table.freeze({
-			RefSpeed = 14, -- studs/s at which the gait blend saturates (~its investigate speed)
+			RefSpeed = 16, -- studs/s at which the gait blend saturates
 			SpeedSmoothing = 12, -- per-second lerp rate smoothing the measured ground speed
 			WeightSmoothing = 9, -- per-second lerp rate blending move/chase weights
 			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, gait frozen)
-			StrideDistance = 3.0, -- studs of travel per full bound cycle -> sets cadence
-			ChaseStrideScale = 0.68, -- shorter, faster stride in a chase/investigate (frantic scramble)
+			StrideDistance = 3.4, -- studs of travel per gallop bound -> sets cadence
+			ChaseStrideScale = 0.7, -- shorter, faster stride in a chase/investigate (frantic scramble)
 
+			-- Whole-body GALLOP (the gorilla mesh): a suspension arc + a fore/aft spine rock
+			-- + forward lunge + roll. This is the live path (the monkey has a mesh body).
+			GallopHeight = 0.95, -- studs the body rises in mid-bound suspension (feet off the floor)
+			GallopChaseScale = 0.82, -- flatter, faster suspension in a chase (more horizontal charge)
+			GallopSurge = 0.75, -- studs the body lunges forward through the air
+			GallopPitch = 0.24, -- rad spine rock (nose down on the gather/land, up on the leap)
+			GallopRoll = 0.1, -- rad lateral roll, a loping shoulder-roll
+			GallopHunch = 0.2, -- rad base forward hunch (deeper while hunting)
+
+			-- Articulated-limb fallback (only if the mesh is ever absent: MonsterRig.buildPrimate).
 			ArmSwing = 0.95, -- rad fore/aft swing of the front limbs
 			LegSwing = 0.85, -- rad fore/aft swing of the rear limbs
-			LimbDesync = 0.06, -- phase offset between L/R of a pair (organic, not perfectly synced)
-			BodyBob = 0.22, -- studs vertical torso bob (2x per stride -- one per plant)
-			BodyPitchFlex = 0.2, -- rad spine flex through the bound
-			BodyRoll = 0.07, -- rad lateral roll
-			ChaseHunch = 0.32, -- rad extra forward hunch while hunting (low, aggressive)
+			LimbDesync = 0.06, -- phase offset between L/R of a pair (organic)
 			HeadBob = 0.16, -- rad head bob with the gait
 			HeadThrust = 0.28, -- rad forward head thrust while hunting
 			TailSway = 0.5, -- rad tail side-sway
 			TailLash = 0.45, -- extra tail motion while hunting
 			IdleBreathHz = 0.6, -- breaths/second when idle
 			IdleBreathAmp = 0.07, -- studs of vertical breathing when idle
-			IdleScanSpeed = 1.3, -- idle head-scan speed (looking around)
+			IdleScanSpeed = 1.3, -- idle head-scan speed
 			IdleScanAmp = 0.25, -- rad idle head-scan yaw amplitude
 		}),
 	}),
