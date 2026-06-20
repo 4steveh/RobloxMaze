@@ -121,6 +121,78 @@ local function buildPrimate(rig: Model, root: BasePart, cfg): BasePart
 	return torso -- the "Body" the jumpscare clones / the eye-glow host
 end
 
+-- Build an ARTICULATED rig from a multi-part mesh Model (the AI-generated creature split
+-- into the named parts Body[torso] + CHead + ArmL/ArmR + LegL/LegR). Each part is joined
+-- to the torso by a Motor6D pivoting at its attachment (shoulder/hip/neck), so the client
+-- gait swings REAL mesh limbs (not just a rigid hop). The rest pose = the generated pose;
+-- the pivot frame is Body-axis-aligned so a Transform pitch swings the limb fore/aft.
+-- Returns the torso ("Body"). Falls back to the primitive primate if the model is malformed.
+local function partPivot(name: string, relPos: Vector3, size: Vector3): Vector3
+	-- shoulder/hip near the limb's top + pulled toward the torso; neck between head & torso.
+	if name == "ArmL" or name == "ArmR" then
+		return Vector3.new(relPos.X * 0.78, relPos.Y + size.Y * 0.42, relPos.Z)
+	elseif name == "LegL" or name == "LegR" then
+		return Vector3.new(relPos.X, relPos.Y + size.Y * 0.42, relPos.Z)
+	elseif name == "CHead" then
+		return Vector3.new(0, relPos.Y * 0.5, relPos.Z * 0.5)
+	end
+	return relPos
+end
+
+local function buildPartsRig(rig: Model, root: BasePart, cfg, partsModel: Model): BasePart?
+	local src = partsModel:Clone()
+	local body = src:FindFirstChild("Body")
+	if not (body and body:IsA("BasePart")) then
+		src:Destroy()
+		return nil -- malformed -> caller falls back
+	end
+	-- Each part's rest CFrame relative to the torso (from the generated assembled pose).
+	local rel = {}
+	for _, mp in ipairs(src:GetChildren()) do
+		if mp:IsA("BasePart") then
+			rel[mp.Name] = body.CFrame:ToObjectSpace(mp.CFrame)
+		end
+	end
+	for _, mp in ipairs(src:GetChildren()) do
+		if mp:IsA("BasePart") then
+			mp.Anchored = false
+			mp.CanCollide = false
+			mp.CanQuery = false
+			mp.CanTouch = false
+			mp.Massless = true
+			mp.Parent = rig
+		end
+	end
+	src:Destroy()
+
+	joint(
+		"BodyJoint",
+		root,
+		body,
+		CFrame.new(0, cfg.ModelYOffset, 0) * CFrame.Angles(0, math.rad(cfg.ModelFaceYaw), 0),
+		CFrame.new()
+	)
+
+	for _, mp in ipairs(rig:GetChildren()) do
+		if mp:IsA("BasePart") and mp.Name ~= "Body" and rel[mp.Name] then
+			local relCF = rel[mp.Name]
+			local c0 = CFrame.new(partPivot(mp.Name, relCF.Position, mp.Size))
+			joint(mp.Name, body, mp, c0, relCF:Inverse() * c0)
+			mp.CFrame = body.CFrame * relCF -- place correctly now (the joint maintains it at runtime)
+		end
+	end
+
+	local cHead = rig:FindFirstChild("CHead")
+	local glowHost = cHead or body
+	local glow = Instance.new("PointLight")
+	glow.Name = "EyeGlow"
+	glow.Color = cfg.EyeGlowColor
+	glow.Brightness = cfg.EyeGlowBrightness
+	glow.Range = cfg.EyeGlowRange
+	glow.Parent = glowHost
+	return body
+end
+
 -- Build, position, and parent a rig for `species` at `spawnPart`, under `parent`. The
 -- visible body is the species mesh if present, else the articulated primate. Returns the
 -- Model. MonsterService sets the `State` attribute and owns it from there.
@@ -153,10 +225,14 @@ function MonsterRig.build(species: string, cfg, spawnPart: BasePart, parent: Ins
 	headWeld.C0 = CFrame.new(0, cfg.BodySize.Y / 2 + 0.5, 0)
 	headWeld.Parent = root
 
-	-- Visible body: the species mesh, or the articulated primate when no mesh exists.
+	-- Visible body, in preference order: a multi-part mesh Model -> ARTICULATED mesh rig
+	-- (limbs swing); a single mesh -> rigid whole-body; else the primitive primate.
 	local assets = ServerStorage:FindFirstChild("Assets")
 	local meshSource = assets and cfg.BodyAssetName and assets:FindFirstChild(cfg.BodyAssetName)
-	if meshSource and meshSource:IsA("BasePart") then
+	local built = false
+	if meshSource and meshSource:IsA("Model") then
+		built = buildPartsRig(rig, root, cfg, meshSource) ~= nil
+	elseif meshSource and meshSource:IsA("BasePart") then
 		local body = buildMeshBody(rig, root, meshSource, cfg)
 		local glow = Instance.new("PointLight")
 		glow.Name = "EyeGlow"
@@ -164,7 +240,9 @@ function MonsterRig.build(species: string, cfg, spawnPart: BasePart, parent: Ins
 		glow.Brightness = cfg.EyeGlowBrightness
 		glow.Range = cfg.EyeGlowRange
 		glow.Parent = body
-	else
+		built = true
+	end
+	if not built then
 		buildPrimate(rig, root, cfg) -- creates "Body" + limbs + its own eye-glow
 	end
 

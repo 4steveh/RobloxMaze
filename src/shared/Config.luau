@@ -165,9 +165,9 @@ Config.Monster = table.freeze({
 			-- Shared.AgentRadius, so movement is unchanged.
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- physics-root (collision box) dimensions
 			BodyColor = Color3.fromRGB(220, 218, 225), -- fallback rig tone (pale, faintly sickly)
-			BodyAssetName = "BunnyBody", -- ServerStorage.Assets mesh (falls back to a primitive proxy if absent)
-			ModelYOffset = 0.75, -- studs lifting the mesh so its feet meet the floor
-			ModelFaceYaw = 0, -- degrees aligning the mesh face with the rig's forward (mesh front is -Z)
+			BodyAssetName = "BunnyBody", -- the AI-generated MULTI-PART mascot (torso+head+4 limbs) -> articulated rig
+			ModelYOffset = -0.9, -- drops the torso so the jointed legs reach the floor
+			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
 			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a faint red "it's watching" glow that reads in the dark
 			EyeGlowBrightness = 0.7,
 			EyeGlowRange = 7,
@@ -206,9 +206,9 @@ Config.Monster = table.freeze({
 			-- Rig (no mesh yet -> a primitive proxy until Phase 5 builds an articulated body).
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- <= bunny so corridor fit is identical (do NOT exceed)
 			BodyColor = Color3.fromRGB(60, 48, 44), -- dark/matted: a distinct silhouette from the pale bunny
-			BodyAssetName = "MonkeyBody", -- the AI-generated hunched-gorilla mesh (else a primitive proxy)
-			ModelYOffset = -0.4, -- drops the short gorilla mesh so its hands/feet meet the floor
-			ModelFaceYaw = 0, -- mesh front is -Z (matches the rig forward)
+			BodyAssetName = "MonkeyBody", -- the AI-generated MULTI-PART gorilla (torso+head+4 limbs) -> articulated rig
+			ModelYOffset = -1.5, -- drops the torso so the jointed legs reach the floor
+			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
 			EyeGlowColor = Color3.fromRGB(250, 210, 60), -- sickly yellow (vs bunny red): instant species read in the dark
 			EyeGlowBrightness = 0.7,
 			EyeGlowRange = 7,
@@ -226,17 +226,17 @@ Config.Monster = table.freeze({
 			SpeedSmoothing = 12, -- per-second lerp rate smoothing the measured ground speed
 			WeightSmoothing = 9, -- per-second lerp rate blending move/chase weights (no snaps)
 			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, hop frozen)
-			StrideDistance = 4.4, -- studs of travel per hop -> sets cadence (strideHz = speed / this)
+			StrideDistance = 3.8, -- studs of travel per hop -> sets cadence (strideHz = speed / this)
 			ChaseStrideScale = 0.72, -- multiply hop distance in Chase (shorter, more frantic hops)
-			HopHeight = 1.85, -- studs the body arcs up at the apex of a hop (a real, airborne hop)
-			ChaseHopScale = 0.82, -- flatter hops while chasing (lower arc, more horizontal lunge)
-			HopPitch = 0.38, -- rad: nose pitches up on takeoff, down on the descent
-			LandDip = 0.24, -- studs the body compresses downward on the landing beat
-			ForwardSurge = 0.9, -- studs the body lunges forward through the air (then settles)
-			LeanInto = 0.2, -- rad forward crouch-lean, scaled by speed (more in a chase)
+			HopHeight = 0.85, -- studs the TORSO arcs up (gentler now -- the jointed legs carry the hop)
+			ChaseHopScale = 0.85, -- flatter hops while chasing
+			HopPitch = 0.18, -- rad torso pitch through the hop
+			ForwardSurge = 0.5, -- studs the torso lunges forward through the air
+			LegExtend = 0.95, -- rad the legs extend (push) at the plant and tuck at the apex
+			ArmSwing = 0.5, -- rad the arms reach/swing through the hop
+			HeadBob = 0.16, -- rad head bob with the hop
 			IdleBreathHz = 0.5, -- breaths/second when idle
 			IdleBreathAmp = 0.1, -- studs of vertical breathing when idle
-			IdleSwayAmp = 0.05, -- rad gentle idle sway/weight-shift
 		}),
 
 		-- The monkey: an articulated primitive primate doing a 4-beat BOUNDING gallop
@@ -250,18 +250,18 @@ Config.Monster = table.freeze({
 			StrideDistance = 3.4, -- studs of travel per gallop bound -> sets cadence
 			ChaseStrideScale = 0.7, -- shorter, faster stride in a chase/investigate (frantic scramble)
 
-			-- Whole-body GALLOP (the gorilla mesh): a suspension arc + a fore/aft spine rock
-			-- + forward lunge + roll. This is the live path (the monkey has a mesh body).
-			GallopHeight = 0.95, -- studs the body rises in mid-bound suspension (feet off the floor)
-			GallopChaseScale = 0.82, -- flatter, faster suspension in a chase (more horizontal charge)
-			GallopSurge = 0.75, -- studs the body lunges forward through the air
-			GallopPitch = 0.24, -- rad spine rock (nose down on the gather/land, up on the leap)
-			GallopRoll = 0.1, -- rad lateral roll, a loping shoulder-roll
-			GallopHunch = 0.2, -- rad base forward hunch (deeper while hunting)
+			-- Torso bob for the ARTICULATED rig: the jointed LIMBS do the walking, so the
+			-- torso only bobs/rocks subtly on top (a big whole-body arc would read as floating).
+			GallopHeight = 0.32, -- studs the torso rises in mid-bound (subtle -- the legs push it)
+			GallopChaseScale = 0.85, -- flatter, faster in a chase
+			GallopSurge = 0.2, -- studs of forward torso lean through the bound
+			GallopPitch = 0.18, -- rad spine rock (nose down on the gather, up on the leap)
+			GallopRoll = 0.12, -- rad lateral roll, a loping shoulder-roll
+			GallopHunch = 0.22, -- rad base forward hunch (deeper while hunting)
 
-			-- Articulated-limb fallback (only if the mesh is ever absent: MonsterRig.buildPrimate).
-			ArmSwing = 0.95, -- rad fore/aft swing of the front limbs
-			LegSwing = 0.85, -- rad fore/aft swing of the rear limbs
+			-- The articulated mesh LIMBS (front pair leads, rear pair a half-cycle later).
+			ArmSwing = 1.0, -- rad fore/aft swing of the front limbs (arms)
+			LegSwing = 0.9, -- rad fore/aft swing of the rear limbs (legs)
 			LimbDesync = 0.06, -- phase offset between L/R of a pair (organic)
 			HeadBob = 0.16, -- rad head bob with the gait
 			HeadThrust = 0.28, -- rad forward head thrust while hunting

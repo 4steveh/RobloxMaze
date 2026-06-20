@@ -26,12 +26,12 @@ export type BunnyParams = {
 	HopHeight: number,
 	ChaseHopScale: number,
 	HopPitch: number,
-	LandDip: number,
 	ForwardSurge: number,
-	LeanInto: number,
+	LegExtend: number,
+	ArmSwing: number,
+	HeadBob: number,
 	IdleBreathHz: number,
 	IdleBreathAmp: number,
-	IdleSwayAmp: number,
 }
 
 local TAU = math.pi * 2
@@ -46,29 +46,30 @@ function Gaits.bunny(phase: number, clock: number, w: Weights, p: BunnyParams): 
 	local chase = math.clamp(w.chase, 0, 1)
 	local idle = 1 - move
 
-	-- Vertical hop arc -- the body leaves the floor (the anti-glide). Flatter in a chase.
+	-- Body: a (reduced) hop arc + forward lunge + pitch. The articulated LEGS do most of
+	-- the work now, so the torso arc is gentler than the old whole-mesh hop.
 	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0
 	local hopHeight = p.HopHeight * (1 - chase * (1 - p.ChaseHopScale))
 	local hopY = arc * hopHeight * move
-
-	-- Landing compression: a short downward dip as the feet plant (phase near 0 and 1).
-	local landWeight = (math.cos(phase * TAU) + 1) * 0.5 -- 1 at 0/1, 0 at .5
-	local dip = -p.LandDip * landWeight * move
-
-	-- Forward lunge through the air (peaks mid-hop, settles at the plant). -Z is forward.
-	local surge = -p.ForwardSurge * arc * move
-
-	-- Pitch: nose up on takeoff, nose down on the descent; plus a forward crouch-lean
-	-- that deepens with speed and especially in a chase.
+	local surge = -p.ForwardSurge * arc * move -- -Z forward
 	local pitch = p.HopPitch * math.sin(phase * TAU) * move
-	local lean = p.LeanInto * move * (0.5 + 0.5 * chase)
-
-	-- Idle life so a stopped rig still breathes and shifts its weight (never a statue).
 	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
-	local sway = math.sin(clock * 1.3) * p.IdleSwayAmp * idle
 
-	local body = CFrame.new(0, hopY + dip + breath, surge) * CFrame.Angles(pitch + lean, sway, 0)
-	return { Body = body }
+	-- A bunny HOP drives BOTH legs together: they extend/push down at the plant (phase
+	-- 0/1) and tuck up at the airborne apex (phase 0.5). Arms reach/swing through the hop;
+	-- the head bobs. These swing real mesh limbs on the articulated rig.
+	local legA = -p.LegExtend * math.cos(phase * TAU) * move -- extend at plant, tuck at apex
+	local armA = p.ArmSwing * math.sin(phase * TAU) * move
+	local headA = math.sin(phase * TAU + 1.0) * p.HeadBob * move
+
+	return {
+		Body = CFrame.new(0, hopY + breath, surge) * CFrame.Angles(pitch, 0, 0),
+		CHead = CFrame.Angles(headA, 0, 0),
+		LegL = CFrame.Angles(legA, 0, 0),
+		LegR = CFrame.Angles(legA, 0, 0), -- both together (a hop, not an alternating walk)
+		ArmL = CFrame.Angles(armA, 0, 0),
+		ArmR = CFrame.Angles(armA, 0, 0),
+	}
 end
 
 -- Shape of Config.Monster.Anim.Monkey.
