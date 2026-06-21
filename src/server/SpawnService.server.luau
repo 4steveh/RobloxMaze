@@ -33,6 +33,7 @@ spawnsFolder.Name = WorldFolders.PlayerSpawns
 spawnsFolder.Parent = Workspace
 
 local spawnLocations = {}
+local graceToken = {} -- [player] = number, bumped each spawn so a stale grace timer can't clear a fresh grace
 local warnedNoMarker = false
 
 -- Where this player should spawn: their checkpoint CFrame if SafeRoomService has
@@ -102,11 +103,18 @@ local function onCharacterAdded(player, character)
 	-- character can never be instantly re-caught at its spawn. The visible ForceField
 	-- is only the legibility cue -- the real guard is the sensing skip (a catch sets
 	-- Humanoid.Health = 0 directly, which a ForceField would not block anyway).
+	-- Token this spawn so a fast death->respawn (within InvulnSeconds) can't have the
+	-- PREVIOUS character's grace timer fire and strip the fresh character's grace early.
+	graceToken[player] = (graceToken[player] or 0) + 1
+	local mine = graceToken[player]
 	player:SetAttribute(Attributes.RespawnGrace, true)
 	local shield = Instance.new("ForceField")
 	shield.Visible = true
 	shield.Parent = character
 	task.delay(Config.Respawn.InvulnSeconds, function()
+		if graceToken[player] ~= mine then
+			return -- a newer spawn owns grace now; leave it intact
+		end
 		player:SetAttribute(Attributes.RespawnGrace, false)
 		if shield.Parent then
 			shield:Destroy()
@@ -151,4 +159,5 @@ Players.PlayerRemoving:Connect(function(player)
 		spawn:Destroy()
 		spawnLocations[player] = nil
 	end
+	graceToken[player] = nil
 end)

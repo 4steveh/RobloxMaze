@@ -153,23 +153,34 @@ end)
 
 spawnRoundKeys()
 
+-- Per-player pickup scan, factored out so it can be pcall-isolated: a throw on one
+-- player (HRP cleared mid-frame, a key destroyed concurrently) must not freeze key
+-- collection for the whole server.
+local function processPlayerPickups(player)
+	local rootPart = PlayerUtil.livingRootPart(player)
+	if not rootPart then
+		return
+	end
+	-- Iterate backwards so we can remove collected keys in place.
+	for index = #liveKeys, 1, -1 do
+		local key = liveKeys[index]
+		if not key.Parent then
+			table.remove(liveKeys, index) -- already gone
+		elseif Spatial.withinRange(rootPart.Position, key.Position, Config.Spatial.KeyPickupRadius) then
+			table.remove(liveKeys, index) -- claim it before doing anything else
+			key:Destroy()
+			setCount(player, (keyCounts[player] or 0) + 1)
+			keyCollectedRemote:FireClient(player, keyCounts[player])
+		end
+	end
+end
+
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	for _, player in Players:GetPlayers() do
-		local rootPart = PlayerUtil.livingRootPart(player)
-		if rootPart then
-			-- Iterate backwards so we can remove collected keys in place.
-			for index = #liveKeys, 1, -1 do
-				local key = liveKeys[index]
-				if not key.Parent then
-					table.remove(liveKeys, index) -- already gone
-				elseif Spatial.withinRange(rootPart.Position, key.Position, Config.Spatial.KeyPickupRadius) then
-					table.remove(liveKeys, index) -- claim it before doing anything else
-					key:Destroy()
-					setCount(player, (keyCounts[player] or 0) + 1)
-					keyCollectedRemote:FireClient(player, keyCounts[player])
-				end
-			end
+		local ok, err = pcall(processPlayerPickups, player)
+		if not ok then
+			warn("[KeyService] pickup tick error for a player (skipped this tick):", err)
 		end
 	end
 end

@@ -295,6 +295,8 @@ Config.Noise = table.freeze({
 	IdleNoise = 0.0, -- noise while still
 	RisePerSecond = 4.0, -- NoiseLevel rises toward target fast (sprinting is immediately loud)
 	DecayPerSecond = 1.3, -- and decays slowly (you must COMMIT to quiet to shed the monkey)
+	MaxPlausibleSpeed = 80, -- studs/s above which a position delta is a TELEPORT (respawn jump),
+	-- not real running -- such a tick is ignored for noise so a respawn can't spike NoiseLevel.
 
 	-- HUD noise meter (NoiseMeterController) -- teaches the monkey's counter: a marker sits
 	-- at the monkey's HearThreshold, so the player SEES when they cross into "audible".

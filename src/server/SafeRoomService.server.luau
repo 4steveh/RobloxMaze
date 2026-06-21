@@ -43,40 +43,50 @@ Players.PlayerRemoving:Connect(function(player)
 	insideLast[player] = nil
 end)
 
+-- Per-player occupancy/transition check, factored out so it can be pcall-isolated:
+-- a throw on one player (HRP cleared mid-frame, a room part destroyed) must not
+-- freeze safe-room detection (and thus battery recharge + checkpoints) server-wide.
+local function processPlayer(player, safeRooms)
+	local rootPart = PlayerUtil.livingRootPart(player)
+	if not rootPart then
+		return -- No living HRP this tick (spawning/dead): skip without erroring.
+	end
+	local position = rootPart.Position
+
+	-- Which SafeRoom (if any) the player is inside this tick.
+	local currentRoom = nil
+	for _, room in safeRooms do
+		if room:IsA("BasePart") and Spatial.isInsidePart(room, position) then
+			currentRoom = room
+			break
+		end
+	end
+
+	local insideNow = currentRoom ~= nil
+	local wasInside = insideLast[player] == true
+
+	if insideNow and not wasInside then
+		-- Entered: this SafeRoom becomes the checkpoint SpawnService reads.
+		player:SetAttribute(Attributes.Checkpoint, currentRoom.CFrame)
+		player:SetAttribute(Attributes.InSafeRoom, true)
+		enteredRemote:FireClient(player)
+	elseif wasInside and not insideNow then
+		-- Left: checkpoint persists; only the "safe" flag clears.
+		player:SetAttribute(Attributes.InSafeRoom, false)
+		leftRemote:FireClient(player)
+	end
+
+	insideLast[player] = insideNow
+end
+
 while true do
 	task.wait(Config.Spatial.PollInterval)
 
 	local safeRooms = Discovery.getAll(Tags.SafeRoom)
 	for _, player in Players:GetPlayers() do
-		local rootPart = PlayerUtil.livingRootPart(player)
-		if rootPart then
-			local position = rootPart.Position
-
-			-- Which SafeRoom (if any) the player is inside this tick.
-			local currentRoom = nil
-			for _, room in safeRooms do
-				if room:IsA("BasePart") and Spatial.isInsidePart(room, position) then
-					currentRoom = room
-					break
-				end
-			end
-
-			local insideNow = currentRoom ~= nil
-			local wasInside = insideLast[player] == true
-
-			if insideNow and not wasInside then
-				-- Entered: this SafeRoom becomes the checkpoint SpawnService reads.
-				player:SetAttribute(Attributes.Checkpoint, currentRoom.CFrame)
-				player:SetAttribute(Attributes.InSafeRoom, true)
-				enteredRemote:FireClient(player)
-			elseif wasInside and not insideNow then
-				-- Left: checkpoint persists; only the "safe" flag clears.
-				player:SetAttribute(Attributes.InSafeRoom, false)
-				leftRemote:FireClient(player)
-			end
-
-			insideLast[player] = insideNow
+		local ok, err = pcall(processPlayer, player, safeRooms)
+		if not ok then
+			warn("[SafeRoomService] tick error for a player (skipped this tick):", err)
 		end
-		-- No living HRP this tick (spawning/dead): skip without erroring.
 	end
 end

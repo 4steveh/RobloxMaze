@@ -48,6 +48,11 @@ end
 
 local function onPlayerAdded(player: Player)
 	player:SetAttribute(Attributes.NoiseLevel, 0)
+	-- Drop the stale sample on respawn so the death->respawn position jump is never
+	-- read as movement (the next tick re-seeds lastPos from the fresh position).
+	player.CharacterAdded:Connect(function()
+		lastPos[player] = nil
+	end)
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -58,6 +63,36 @@ Players.PlayerRemoving:Connect(function(player)
 	lastPos[player] = nil
 end)
 
+-- Per-player noise update, factored out so it can be pcall-isolated (one bad player
+-- can't freeze noise -- and thus the monkey's prey signal -- for the whole server).
+local function processPlayer(player: Player, dt: number)
+	local hrp = PlayerUtil.livingRootPart(player)
+	local current = player:GetAttribute(Attributes.NoiseLevel) or 0
+	local target
+	if not hrp or isSilenced(player) then
+		target = 0
+		if hrp then
+			lastPos[player] = hrp.Position
+		end
+	else
+		local prev = lastPos[player] or hrp.Position
+		lastPos[player] = hrp.Position
+		local delta = hrp.Position - prev
+		local speed = Vector3.new(delta.X, 0, delta.Z).Magnitude / dt
+		if speed > N.MaxPlausibleSpeed then
+			return -- a teleport (respawn jump), not running: leave NoiseLevel untouched this tick
+		end
+		target = targetNoise(speed)
+	end
+	-- Asymmetric smoothing: rise fast (instantly loud), decay slow (commit to quiet).
+	local rate = if target > current then N.RisePerSecond else N.DecayPerSecond
+	local value = current + (target - current) * math.min(dt * rate, 1)
+	if value < 0.001 then
+		value = 0
+	end
+	player:SetAttribute(Attributes.NoiseLevel, value)
+end
+
 local lastClock = os.clock()
 while true do
 	task.wait(Config.Spatial.PollInterval)
@@ -66,27 +101,9 @@ while true do
 	lastClock = now
 
 	for _, player in Players:GetPlayers() do
-		local hrp = PlayerUtil.livingRootPart(player)
-		local current = player:GetAttribute(Attributes.NoiseLevel) or 0
-		local target
-		if not hrp or isSilenced(player) then
-			target = 0
-			if hrp then
-				lastPos[player] = hrp.Position
-			end
-		else
-			local prev = lastPos[player] or hrp.Position
-			lastPos[player] = hrp.Position
-			local delta = hrp.Position - prev
-			local speed = Vector3.new(delta.X, 0, delta.Z).Magnitude / dt
-			target = targetNoise(speed)
+		local ok, err = pcall(processPlayer, player, dt)
+		if not ok then
+			warn("[NoiseService] tick error for a player (skipped this tick):", err)
 		end
-		-- Asymmetric smoothing: rise fast (instantly loud), decay slow (commit to quiet).
-		local rate = if target > current then N.RisePerSecond else N.DecayPerSecond
-		local value = current + (target - current) * math.min(dt * rate, 1)
-		if value < 0.001 then
-			value = 0
-		end
-		player:SetAttribute(Attributes.NoiseLevel, value)
 	end
 end
