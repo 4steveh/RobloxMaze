@@ -15,10 +15,36 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
+local Discovery = require(ReplicatedStorage.Discovery)
+local Tags = require(ReplicatedStorage.Tags)
 
 local C = Config.Traps
 local trapRemote = Remotes.get(Remotes.Names.TrapTriggered)
 local sfxBus = AudioGroups.get("SFX")
+
+-- Continuous gentle "danger breathing" of each trap's glow so a trap reads as a LIVE HAZARD,
+-- not floor decoration. A trap mid wind-up/fire is in `flashing` and the pulse leaves its glow
+-- alone (the flash owns the brightness then).
+local traps = {}
+Discovery.observe(Tags.Trap, function(part)
+	if part:IsA("BasePart") then
+		traps[part] = true
+	end
+end, function(part)
+	traps[part] = nil
+end)
+local flashing = {} -- [part] = true while a wind-up / fire flash owns the glow
+RunService.Heartbeat:Connect(function()
+	local wave = 0.5 + 0.5 * math.sin(os.clock() * C.GlowPulseHz * math.pi * 2)
+	for part in traps do
+		if part.Parent and not flashing[part] then
+			local glow = part:FindFirstChild("TrapGlow")
+			if glow then
+				glow.Brightness = C.GlowBrightness * (1 - C.GlowPulseDepth * wave)
+			end
+		end
+	end
+end)
 
 -- Recolour the trap's arrow parts + glow (used for the wind-up pulse and fire flash).
 local function setTrapColor(part, color, glowMul)
@@ -44,6 +70,7 @@ end
 
 local function windup(part)
 	play(C.ClickId, 0.5)
+	flashing[part] = true
 	task.spawn(function()
 		local t0 = os.clock()
 		while os.clock() - t0 < C.WindupSeconds and part.Parent do
@@ -54,16 +81,19 @@ local function windup(part)
 		if part.Parent then
 			setTrapColor(part, C.ArrowColor, 1)
 		end
+		flashing[part] = nil -- hand the glow back to the breathing pulse
 	end)
 end
 
 local function fire(part)
 	play(C.FireId, C.FireVolume)
+	flashing[part] = true
 	setTrapColor(part, C.ArrowFlashColor, 5)
 	task.delay(0.15, function()
 		if part.Parent then
 			setTrapColor(part, C.ArrowColor, 1)
 		end
+		flashing[part] = nil
 	end)
 	-- A dart streaks across the corridor along the trap's facing (-Z).
 	local dir = part.CFrame.LookVector
