@@ -308,6 +308,36 @@ Config.Noise = table.freeze({
 	MeterLabel = "NOISE",
 })
 
+-- Traps: telegraphed hazards -----------------------------------------------------
+-- Server-authoritative floor traps (spatial, never Touched). Each is FAIR: an always-
+-- visible red arrow + faint glow telegraphs it, and entering it starts a short wind-up
+-- (the arrow flashes + clicks) so an attentive player can back off before it fires. A
+-- sprung trap kills (Health=0 -> the normal checkpoint respawn) AND spikes your noise,
+-- so even surviving one can draw the monkey. The counter is simply: watch the floor.
+Config.Traps = table.freeze({
+	TriggerRadius = 4.5, -- studs: entering this of a Trap marker begins the wind-up
+	WindupSeconds = 0.55, -- the telegraph/reaction window -- leave the zone in time to survive
+	RearmSeconds = 3, -- seconds after firing/disarming before the trap can trigger again
+	NoiseOnTrigger = 1.0, -- spikes the victim's NoiseLevel when it fires (a sprung trap is LOUD)
+
+	-- Telegraph (always-visible, built into the placed marker): a red arrow + faint glow.
+	ArrowColor = Color3.fromRGB(190, 30, 30),
+	ArrowFlashColor = Color3.fromRGB(255, 70, 60), -- the brighter flash during wind-up
+	GlowColor = Color3.fromRGB(255, 45, 40),
+	GlowBrightness = 0.5, -- subtle: you must be paying attention to spot it in the dark
+	GlowRange = 9,
+
+	-- Fire effect (client renders a dart streaking along the arrow + an impact flash).
+	DartColor = Color3.fromRGB(200, 200, 210),
+	DartLength = 6, -- studs of the dart streak
+	DartSpeed = 130, -- studs/s the dart visual travels across the corridor
+
+	-- Audio (reuse the already-verified free Creator-Store sound ids).
+	ClickId = "rbxassetid://9119717523", -- mechanical click on wind-up
+	FireId = "rbxassetid://9120188626", -- a hard thunk on fire
+	FireVolume = 0.8,
+})
+
 -- Lighting / atmosphere ---------------------------------------------------------
 -- Only the FLICKER animation tunables the FlickerController reads live here. The
 -- static place lighting (Lighting service, Atmosphere, ColorCorrection) is content
