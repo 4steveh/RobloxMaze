@@ -72,8 +72,13 @@ makeBand(UDim2.fromScale(1 - th, 0), UDim2.fromScale(th, 1), 180) -- right
 
 -- Cache each eye-glow's base so we can restore it when the monster stops hunting.
 local glowBase = {} -- [PointLight] = { b = Brightness, r = Range }
+local glowByRig = {} -- [rig] = PointLight, cached so we don't recurse the rig every frame
 local function glowOf(rig)
-	local g = rig:FindFirstChild("EyeGlow", true)
+	local g = glowByRig[rig]
+	if not (g and g.Parent) then
+		g = rig:FindFirstChild("EyeGlow", true)
+		glowByRig[rig] = g
+	end
 	if g and g:IsA("PointLight") then
 		if not glowBase[g] then
 			glowBase[g] = { b = g.Brightness, r = g.Range }

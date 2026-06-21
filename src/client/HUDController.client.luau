@@ -221,6 +221,19 @@ local function showToast(text, color, seconds)
 	end)
 end
 
+-- Cached ExitDoor list (the exit arrow read Discovery.getAll every frame; observe once).
+local exitDoors = {}
+Discovery.observe(Tags.ExitDoor, function(inst)
+	if inst:IsA("BasePart") then
+		table.insert(exitDoors, inst)
+	end
+end, function(inst)
+	local i = table.find(exitDoors, inst)
+	if i then
+		table.remove(exitDoors, i)
+	end
+end)
+
 -- Remotes ---------------------------------------------------------------------
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
@@ -304,8 +317,8 @@ RunService.RenderStepped:Connect(function()
 		local door = nil
 		if rootPart then
 			local nearest = math.huge
-			for _, candidate in Discovery.getAll(Tags.ExitDoor) do
-				if candidate:IsA("BasePart") then
+			for _, candidate in exitDoors do
+				if candidate.Parent then
 					local dist = (candidate.Position - rootPart.Position).Magnitude
 					if dist < nearest then
 						nearest, door = dist, candidate

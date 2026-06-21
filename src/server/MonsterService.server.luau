@@ -86,14 +86,14 @@ local SPECIES = {
 	},
 }
 
--- Raycast params reused each sense: ignore the rig and all player characters, so
--- only world geometry (walls) can block line of sight.
-local function sightParams(rig: Model): RaycastParams
-	local filter = { rig }
-	for _, player in Players:GetPlayers() do
-		if player.Character then
-			table.insert(filter, player.Character)
-		end
+-- One sight RaycastParams built ONCE per tick (not per rig): exclude every monster rig
+-- (the whole Monsters folder) and all player characters, so only world geometry (walls)
+-- blocks line of sight. Excluding all rigs also means one monster never hides a player
+-- from another's vision -- desirable, and it lets every rig share one params object.
+local function buildSightParams(playerChars: { Instance }): RaycastParams
+	local filter = { monstersFolder }
+	for _, character in playerChars do
+		table.insert(filter, character)
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -108,11 +108,10 @@ end
 -- in a SafeRoom / Won / RespawnGrace (a brand-new player whose attributes are still nil
 -- is treated as eligible). SafeRoom/Won/Grace also silences the monkey (those players
 -- leave the sensed set entirely, so it can neither see nor hear them).
-local function sensePlayers(rig: Model, cfg, rangeMul: number): { any }
+local function sensePlayers(rig: Model, cfg, rangeMul: number, params: RaycastParams): { any }
 	local root = rig.PrimaryPart
 	local eyePos = root.Position + Vector3.new(0, cfg.EyeHeight, 0)
 	local facing = root.CFrame.LookVector
-	local params = sightParams(rig)
 	-- Aggression widens the senses as the round nears its end (rangeMul >= 1).
 	local detectRange = cfg.DetectRange * rangeMul
 
@@ -354,6 +353,14 @@ while true do
 	local aggro = currentAggression()
 	local rangeMul = 1 + aggro * AGGRO.MaxRangeBonus
 	local speedMul = 1 + aggro * AGGRO.MaxSpeedBonus
+	-- Player-character list + the shared sight params, built ONCE per tick (not per rig).
+	local playerChars = {}
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(playerChars, player.Character)
+		end
+	end
+	local sightParams = buildSightParams(playerChars)
 	for _, inst in instances do
 		-- Per-rig isolation: a throw on one rig (PrimaryPart cleared mid-frame, MoveTo
 		-- on a destroyed Humanoid, a raycast edge case) must NOT kill the loop and
@@ -372,7 +379,7 @@ while true do
 				rigPosition = root.Position,
 				patrolNodes = nodes,
 				homePosition = (inst.spawnPart and inst.spawnPart.Position) or root.Position, -- the nest/spawn
-				players = if dormant then {} else sensePlayers(rig, inst.cfg, rangeMul),
+				players = if dormant then {} else sensePlayers(rig, inst.cfg, rangeMul, sightParams),
 			}
 			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
