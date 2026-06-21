@@ -24,7 +24,8 @@ export type BunnyParams = {
 	StrideDistance: number,
 	ChaseStrideScale: number,
 	HopHeight: number,
-	ChaseHopScale: number,
+	WalkArcScale: number,
+	WalkLegScale: number,
 	HopPitch: number,
 	ForwardSurge: number,
 	LegExtend: number,
@@ -46,27 +47,31 @@ function Gaits.bunny(phase: number, clock: number, w: Weights, p: BunnyParams): 
 	local chase = math.clamp(w.chase, 0, 1)
 	local idle = 1 - move
 
-	-- Body: a (reduced) hop arc + forward lunge + pitch. The articulated LEGS do most of
-	-- the work now, so the torso arc is gentler than the old whole-mesh hop.
+	-- Vertical: a LOW creeping walk-bob at patrol, swelling to the full hop arc as the bunny
+	-- COMMITS to a lunge (chase). The arc growing into a hop is itself a "it's coming" tell.
 	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0
-	local hopHeight = p.HopHeight * (1 - chase * (1 - p.ChaseHopScale))
-	local hopY = arc * hopHeight * move
-	local surge = -p.ForwardSurge * arc * move -- -Z forward
+	local arcScale = p.WalkArcScale + (1 - p.WalkArcScale) * chase
+	local hopY = arc * p.HopHeight * arcScale * move
+	local surge = -p.ForwardSurge * arc * arcScale * move -- -Z forward (little lunge while walking)
 	local pitch = p.HopPitch * math.sin(phase * TAU) * move
 	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
 
-	-- A bunny HOP drives BOTH legs together: they extend/push down at the plant (phase
-	-- 0/1) and tuck up at the airborne apex (phase 0.5). Arms reach/swing through the hop;
-	-- the head bobs. These swing real mesh limbs on the articulated rig.
-	local legA = -p.LegExtend * math.cos(phase * TAU) * move -- extend at plant, tuck at apex
+	-- Legs: ALTERNATE (a slow, methodical walk -- legs half a cycle apart) when calm, then
+	-- SYNCHRONIZE into the both-legs HOP (extend/push at the plant, tuck at the apex) as the
+	-- chase weight rises. Arms swing; the head bobs. All swing real mesh limbs on the rig.
+	local legHop = -p.LegExtend * math.cos(phase * TAU) -- both together (the hop)
+	local legWalkL = p.LegExtend * p.WalkLegScale * math.sin(phase * TAU)
+	local legWalkR = p.LegExtend * p.WalkLegScale * math.sin((phase + 0.5) * TAU)
+	local legL = (legWalkL + (legHop - legWalkL) * chase) * move
+	local legR = (legWalkR + (legHop - legWalkR) * chase) * move
 	local armA = p.ArmSwing * math.sin(phase * TAU) * move
 	local headA = math.sin(phase * TAU + 1.0) * p.HeadBob * move
 
 	return {
 		Body = CFrame.new(0, hopY + breath, surge) * CFrame.Angles(pitch, 0, 0),
 		CHead = CFrame.Angles(headA, 0, 0),
-		LegL = CFrame.Angles(legA, 0, 0),
-		LegR = CFrame.Angles(legA, 0, 0), -- both together (a hop, not an alternating walk)
+		LegL = CFrame.Angles(legL, 0, 0),
+		LegR = CFrame.Angles(legR, 0, 0),
 		ArmL = CFrame.Angles(armA, 0, 0),
 		ArmR = CFrame.Angles(armA, 0, 0),
 	}

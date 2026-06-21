@@ -177,6 +177,7 @@ Config.Monster = table.freeze({
 			-- Shared.AgentRadius, so movement is unchanged.
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- physics-root (collision box) dimensions
 			BodyColor = Color3.fromRGB(220, 218, 225), -- fallback rig tone (pale, faintly sickly)
+			BodyMaterial = Enum.Material.Fabric, -- matted plush (the primitive fallback that a no-assets build renders)
 			BodyAssetName = "BunnyBody", -- the AI-generated MULTI-PART mascot (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -0.9, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
@@ -220,6 +221,7 @@ Config.Monster = table.freeze({
 			-- Rig (no mesh yet -> a primitive proxy until Phase 5 builds an articulated body).
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- <= bunny so corridor fit is identical (do NOT exceed)
 			BodyColor = Color3.fromRGB(60, 48, 44), -- dark/matted: a distinct silhouette from the pale bunny
+			BodyMaterial = Enum.Material.Concrete, -- rough matte hide (the primitive fallback a no-assets build renders)
 			BodyAssetName = "MonkeyBody", -- the AI-generated MULTI-PART gorilla (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -1.5, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
@@ -242,8 +244,9 @@ Config.Monster = table.freeze({
 			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, hop frozen)
 			StrideDistance = 3.8, -- studs of travel per hop -> sets cadence (strideHz = speed / this)
 			ChaseStrideScale = 0.72, -- multiply hop distance in Chase (shorter, more frantic hops)
-			HopHeight = 0.85, -- studs the TORSO arcs up (gentler now -- the jointed legs carry the hop)
-			ChaseHopScale = 0.85, -- flatter hops while chasing
+			HopHeight = 0.85, -- studs the TORSO arcs up at a full lunge hop (legs carry the rest)
+			WalkArcScale = 0.3, -- patrol body arc as a fraction of the hop (a low creep, not a hop)
+			WalkLegScale = 0.55, -- patrol leg-swing amplitude (alternating walk) vs the full hop extend
 			HopPitch = 0.18, -- rad torso pitch through the hop
 			ForwardSurge = 0.5, -- studs the torso lunges forward through the air
 			LegExtend = 0.95, -- rad the legs extend (push) at the plant and tuck at the apex
