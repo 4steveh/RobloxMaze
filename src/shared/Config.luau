@@ -45,6 +45,7 @@ Config.Flashlight = table.freeze({
 Config.Keys = table.freeze({
 	RequiredToWin = 3, -- keys the player must hold to open the exit
 	SpawnPerRound = 3, -- keys placed in the maze each round (random subset of KeySpot markers)
+	NoSpawnNearStartRadius = 26, -- studs: keys never spawn this close to a PlayerStart, so you can't auto-collect one the instant you spawn (you must go FIND them)
 })
 
 -- Key model (the collectible's placeholder visuals) -----------------------------
