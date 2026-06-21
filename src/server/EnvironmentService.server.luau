@@ -32,7 +32,18 @@ local function ensure(className: string, name: string): Instance
 end
 
 -- Core Lighting -------------------------------------------------------------------
-Lighting.Technology = E.Technology -- Future: real-time shadows -> the flashlight throws creatures' shadows
+-- Technology (Future: real-time shadows -> the flashlight throws creatures' shadows) can be
+-- capability-gated in reduced-context runs (command-bar / MCP-injected source), where a bare
+-- write THROWS and would abort the entire mood setup below. pcall it so the darkness, fog,
+-- and grade always apply -- a normally-published Script has full capability and this succeeds.
+local techOk = pcall(function()
+	Lighting.Technology = E.Technology
+end)
+if not techOk then
+	warn(
+		"[EnvironmentService] could not set Lighting.Technology (insufficient capability); continuing with the rest of the mood."
+	)
+end
 Lighting.ClockTime = E.ClockTime
 Lighting.GeographicLatitude = E.GeographicLatitude
 Lighting.Brightness = E.Brightness

@@ -17,9 +17,9 @@ Config.Flashlight = table.freeze({
 	RechargePerSecond = 5, -- battery seconds restored per real second while in a (server-gated) SafeRoom
 	LowBatteryThreshold = 20, -- seconds remaining at/below which the light dims/flickers
 
-	Range = 60, -- SpotLight.Range, studs
-	Angle = 75, -- SpotLight.Angle, degrees
-	Brightness = 2, -- SpotLight.Brightness
+	Range = 64, -- SpotLight.Range, studs
+	Angle = 75, -- SpotLight.Angle, degrees (wide enough to actually navigate by)
+	Brightness = 3.2, -- SpotLight.Brightness (a strong, dependable beam that cuts the haze)
 
 	ToggleKey = Enum.KeyCode.F, -- key that toggles the flashlight on/off
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
@@ -35,8 +35,8 @@ Config.Flashlight = table.freeze({
 	-- Monster-proximity flicker: a hunting monster nearby makes the beam stutter/dim --
 	-- a fear beat AND a tell that something is hunting you. Render-only (reads replicated
 	-- rig State + distance, exploit-safe). Set MonsterFlickerMaxScale = 0 to disable.
-	MonsterFlickerStartDistance = 40, -- studs: a hunter within this begins the stutter
-	MonsterFlickerMaxScale = 0.5, -- max fraction of brightness the stutter can subtract (0..1)
+	MonsterFlickerStartDistance = 28, -- studs: only a CLOSE hunter stutters the beam (was too eager at 40)
+	MonsterFlickerMaxScale = 0.28, -- max fraction of brightness the stutter can subtract: a fear beat, never a blackout
 	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
 })
 
@@ -94,8 +94,13 @@ Config.Win = table.freeze({
 -- rescuer), skips straight to that respawn — so single-player is UNCHANGED. The monster
 -- ignores a downed player (it moves on; no camping the body — the anti-spawn-camp ethos).
 Config.Downed = table.freeze({
-	Enabled = true,
-	BleedoutSeconds = 25, -- seconds downed before you die/respawn if no one reaches you
+	-- OFF by default: a catch is a RELIABLE instant respawn at your checkpoint (the proven
+	-- path). Set to true to enable the co-op DOWNED/revive flow — best tested with 2+ players
+	-- (a downed solo player with no possible rescuer just respawns either way). The downed
+	-- code is fully fixed (it anchors the body in place rather than ragdolling, which used to
+	-- clip players through the floor); it's gated only until the 2-player flow is playtested.
+	Enabled = false,
+	BleedoutSeconds = 18, -- seconds downed before you die/respawn if no one reaches you
 	ReviveRadius = 7, -- studs a living teammate must be within to revive you
 	ReviveSeconds = 3.5, -- seconds of a teammate staying close to complete the revive
 	ReviveDecayScale = 1.5, -- revive progress drains at this × the fill rate when no rescuer is near
@@ -464,23 +469,26 @@ Config.Environment = table.freeze({
 	Technology = Enum.Technology.Future,
 	ClockTime = 0, -- midnight
 	GeographicLatitude = 0,
-	Brightness = 1, -- sun/moon brightness (low: an interior at night)
-	ExposureCompensation = -0.15, -- pull the whole frame down a touch
-	Ambient = Color3.fromRGB(10, 10, 14), -- shadowed-area fill (very dark)
-	OutdoorAmbient = Color3.fromRGB(18, 18, 26), -- skylight fill (dark, faintly cold)
-	EnvironmentDiffuseScale = 0.25, -- low ambient bounce -> darkness has weight
+	-- Dark + moody but NAVIGABLE: you can make out corridors and find your way with the
+	-- flashlight, without the map being a pitch-black "can't see anything" void. (Tuned up
+	-- from a near-blind setting that players couldn't navigate.)
+	Brightness = 2, -- sun/moon fill (a dim, moonlit interior)
+	ExposureCompensation = -0.05, -- a hair down, not a heavy crush
+	Ambient = Color3.fromRGB(24, 24, 30), -- shadowed-area fill (dark, but shapes still read)
+	OutdoorAmbient = Color3.fromRGB(30, 30, 40), -- skylight fill (dark, faintly cold)
+	EnvironmentDiffuseScale = 0.4, -- a little ambient bounce so unlit areas aren't solid black
 	EnvironmentSpecularScale = 0.25,
 	GlobalShadows = true,
 	ShadowSoftness = 0.5,
 
 	-- Atmosphere (the modern volumetric haze; supersedes legacy Fog under Future).
 	Atmosphere = table.freeze({
-		Density = 0.42, -- corridor haze: distant things dissolve into the dark
+		Density = 0.3, -- corridor haze: present, but the flashlight now reaches down a hall
 		Offset = 0.1,
 		Color = Color3.fromRGB(150, 150, 162), -- cool grey air
 		Decay = Color3.fromRGB(70, 70, 85), -- the colour haze decays toward
 		Glare = 0.1,
-		Haze = 2.2, -- the milky "you can't see far" look
+		Haze = 1.5, -- a touch of the milky look without blinding you
 	}),
 
 	-- Bloom: only genuinely bright things bleed (eye-glow, neon keys, flicker tubes),

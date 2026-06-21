@@ -12,7 +12,7 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -95,7 +95,7 @@ local function monsterProximityFlicker()
 	local threat = 0
 	for _, rig in monsters:GetChildren() do
 		local st = rig:GetAttribute(Attributes.MonsterState)
-		if st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate or st == Enums.MonsterState.Alert then
+		if st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate then -- pursuing only (not Alert): the beam stays dependable while the monkey is just listening
 			local rRoot = rig:FindFirstChild("HumanoidRootPart")
 			if rRoot then
 				local d = (rRoot.Position - hrp.Position).Magnitude
@@ -132,15 +132,18 @@ player.CharacterRemoving:Connect(function()
 	inSafeRoom = false
 end)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-	if input.KeyCode == Config.Flashlight.ToggleKey then
+-- Toggle via ContextActionService: createTouchButton makes an on-screen "Light" button on
+-- touch devices (iPad/iPhone) automatically, while the keyboard ToggleKey still works on PC.
+local TOGGLE_ACTION = "ToggleFlashlight"
+ContextActionService:BindAction(TOGGLE_ACTION, function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
 		lightOn = not lightOn
 		player:SetAttribute(Attributes.FlashlightOn, lightOn)
 	end
-end)
+	return Enum.ContextActionResult.Sink
+end, true, Config.Flashlight.ToggleKey)
+ContextActionService:SetTitle(TOGGLE_ACTION, "Light")
+ContextActionService:SetPosition(TOGGLE_ACTION, UDim2.new(1, -150, 0.42, 0))
 
 -- Safe-room state comes ONLY from the server.
 local enteredRemote = Remotes.get(Remotes.Names.SafeRoomEntered)
