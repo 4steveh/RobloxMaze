@@ -24,11 +24,29 @@ Remotes.init()
 local trapRemote = Remotes.get(Remotes.Names.TrapTriggered)
 local C = Config.Traps
 
+-- Ensure each trap carries a clearly-visible red danger glow (adopt an existing placed
+-- PointLight or create one), set bright from Config -- so a trap reads as DANGER, not decor,
+-- and it's reproducible from code (not reliant on baked place geometry). Named so the client
+-- TrapFXController can find + pulse it. Replicates to every client.
+local function ensureGlow(part: BasePart)
+	local glow = part:FindFirstChild("TrapGlow")
+	if not (glow and glow:IsA("PointLight")) then
+		glow = part:FindFirstChildOfClass("PointLight") or Instance.new("PointLight")
+		glow.Name = "TrapGlow"
+		glow.Parent = part
+	end
+	glow.Color = C.GlowColor
+	glow.Brightness = C.GlowBrightness
+	glow.Range = C.GlowRange
+	glow.Shadows = false
+end
+
 -- [part] = { state = "armed"|"windup"|"cooldown", windupStart?, victim?, cooldownUntil? }
 local traps = {}
 Discovery.observe(Tags.Trap, function(part)
 	if part:IsA("BasePart") then
 		traps[part] = { state = "armed" }
+		ensureGlow(part)
 	end
 end, function(part)
 	traps[part] = nil

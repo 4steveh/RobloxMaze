@@ -423,7 +423,7 @@ Config.Noise = table.freeze({
 -- so even surviving one can draw the monkey. The counter is simply: watch the floor.
 Config.Traps = table.freeze({
 	TriggerRadius = 4.5, -- studs: entering this of a Trap marker begins the wind-up
-	WindupSeconds = 0.55, -- the telegraph/reaction window -- leave the zone in time to survive
+	WindupSeconds = 1.2, -- the reaction window: long enough to SEE the flash and step off in time (was a too-fast 0.55)
 	RearmSeconds = 3, -- seconds after firing/disarming before the trap can trigger again
 	NoiseOnTrigger = 1.0, -- spikes the victim's NoiseLevel when it fires (a sprung trap is LOUD)
 
@@ -431,8 +431,10 @@ Config.Traps = table.freeze({
 	ArrowColor = Color3.fromRGB(190, 30, 30),
 	ArrowFlashColor = Color3.fromRGB(255, 70, 60), -- the brighter flash during wind-up
 	GlowColor = Color3.fromRGB(255, 45, 40),
-	GlowBrightness = 0.5, -- subtle: you must be paying attention to spot it in the dark
-	GlowRange = 9,
+	GlowBrightness = 1.6, -- clearly visible danger glow (TrapService ensures it on each trap on boot)
+	GlowRange = 14,
+	GlowPulseHz = 1.6, -- the glow gently pulses so a trap reads as "alive / dangerous", not decoration
+	GlowPulseDepth = 0.4, -- fraction of brightness the pulse dips (0..1)
 
 	-- Fire effect (client renders a dart streaking along the arrow + an impact flash).
 	DartColor = Color3.fromRGB(200, 200, 210),
@@ -478,10 +480,10 @@ Config.Environment = table.freeze({
 	-- Dark + moody but NAVIGABLE on mobile: carry baseline visibility on flat AMBIENT (which
 	-- the mobile quality scaler can't strip), keep ExposureCompensation at 0 (never negative --
 	-- it crushes blacks into mush on cheap panels), and keep fog thin so the flashlight reaches.
-	Brightness = 2.8, -- sun/moon fill (a dim, moonlit interior)
+	Brightness = 3.4, -- sun/moon fill (a moonlit interior you can clearly navigate)
 	ExposureCompensation = 0, -- never negative on mobile
-	Ambient = Color3.fromRGB(40, 42, 50), -- readability floor: you can make out walls even light-off (nudged up after repeated "too dark")
-	OutdoorAmbient = Color3.fromRGB(44, 46, 56), -- skylight fill (dark, faintly cold)
+	Ambient = Color3.fromRGB(78, 80, 92), -- clearly navigable: walls/corridors read even with the light off (lifted hard after repeated "too dark")
+	OutdoorAmbient = Color3.fromRGB(72, 74, 88), -- skylight fill (cool, dim but visible)
 	EnvironmentDiffuseScale = 0.5, -- ambient bounce (helps PC; near-inert at midnight, not the floor)
 	EnvironmentSpecularScale = 0.25,
 	GlobalShadows = true,
@@ -577,6 +579,9 @@ Config.Onboarding = table.freeze({
 	-- of text (Roblox's own FTUE guidance). Driven by the MonsterStateChanged remote.
 	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
 	AlertTip = "It HEARD you — slow down and move quietly",
+	-- Shown the first time you approach a floor trap, BEFORE you can step on it blind.
+	TrapTip = "⚠ The glowing RED marks on the floor are TRAPS — don't step on them",
+	TrapTipRadius = 16, -- studs: a trap within this (first time) triggers the warning tip
 	TipSeconds = 5, -- how long a tip holds before fading
 })
 

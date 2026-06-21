@@ -8,11 +8,14 @@
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Enums = require(ReplicatedStorage.Enums)
+local Tags = require(ReplicatedStorage.Tags)
+local Discovery = require(ReplicatedStorage.Discovery)
 
 local O = Config.Onboarding
 local player = Players.LocalPlayer
@@ -71,5 +74,40 @@ stateRemote.OnClientEvent:Connect(function(state)
 	elseif state == Enums.MonsterState.Alert and not shown.alert then
 		shown.alert = true
 		showTip(O.AlertTip)
+	end
+end)
+
+-- Trap warning: the first time the player gets near a floor trap, warn them BEFORE they can
+-- step on it blind (the "I died and had no idea why" moment). Throttled proximity poll.
+local traps = {}
+Discovery.observe(Tags.Trap, function(part)
+	if part:IsA("BasePart") then
+		traps[part] = true
+	end
+end, function(part)
+	traps[part] = nil
+end)
+
+local sinceCheck = 0
+RunService.Heartbeat:Connect(function(dt)
+	if shown.trap then
+		return
+	end
+	sinceCheck += dt
+	if sinceCheck < 0.25 then
+		return
+	end
+	sinceCheck = 0
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+	for part in traps do
+		if part.Parent and (part.Position - hrp.Position).Magnitude <= O.TrapTipRadius then
+			shown.trap = true
+			showTip(O.TrapTip)
+			break
+		end
 	end
 end)
