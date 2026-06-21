@@ -34,6 +34,7 @@ export type Config = {
 	InvestigateJitter: number,
 	CatchRadius: number,
 	WaypointReachedDistance: number,
+	WanderRepickSeconds: number,
 	PatrolMemory: number,
 }
 
@@ -47,8 +48,10 @@ export type FSMState = {
 	searchElapsed: number,
 	searchTarget: Vector3?,
 	patrolTarget: Vector3?,
+	patrolElapsed: number, -- time spent heading to patrolTarget (re-pick if it's unreachable)
 	recentNodes: { Vector3 },
 	investigateTarget: Vector3?,
+	investigateElapsed: number, -- time spent heading to investigateTarget (re-pick if unreachable)
 }
 
 local MonkeyFSM = {}
@@ -119,8 +122,10 @@ function MonkeyFSM.newState(): FSMState
 		searchElapsed = 0,
 		searchTarget = nil,
 		patrolTarget = nil,
+		patrolElapsed = 0,
 		recentNodes = {},
 		investigateTarget = nil,
+		investigateElapsed = 0,
 	}
 end
 
@@ -138,6 +143,7 @@ local function enterInvestigate(state: FSMState, cfg: Config): TickResult
 	state.name = Enums.MonsterState.Investigate
 	state.quietElapsed = 0
 	state.investigateTarget = state.lastHeard
+	state.investigateElapsed = 0
 	return { moveTarget = state.investigateTarget, speed = cfg.InvestigateSpeed, caught = nil }
 end
 
@@ -166,13 +172,19 @@ local function tickPatrol(state: FSMState, sensed: Sensed, cfg: Config): TickRes
 	-- den and never roams the maze like the bunny, so the two never shadow each other. On
 	-- arrival it picks a fresh nearby point; if it has strayed (after an investigation),
 	-- aiming back near home walks it home.
+	state.patrolElapsed += sensed.dt
+	-- Re-pick on ARRIVAL or after WanderRepickSeconds of failing to arrive: a random nest
+	-- point can land inside a wall (the rig then never gets within WaypointReachedDistance of
+	-- it and would steer into the wall forever) -- the timeout abandons it and picks anew.
 	if
 		state.patrolTarget == nil
 		or flatDistance(sensed.rigPosition, state.patrolTarget) < cfg.WaypointReachedDistance
+		or state.patrolElapsed >= cfg.WanderRepickSeconds
 	then
 		local a = math.random() * math.pi * 2
 		local d = math.random() * cfg.NestWanderRadius
 		state.patrolTarget = sensed.homePosition + Vector3.new(math.cos(a) * d, 0, math.sin(a) * d)
+		state.patrolElapsed = 0
 	end
 	return { moveTarget = state.patrolTarget, speed = cfg.PatrolSpeed, caught = nil }
 end
@@ -222,15 +234,20 @@ local function tickInvestigate(state: FSMState, sensed: Sensed, cfg: Config): Ti
 		state.quietElapsed = 0
 	end
 
-	-- Rush the last-heard point with a random lateral weave (slightly dodgeable).
+	-- Rush the last-heard point with a random lateral weave (slightly dodgeable). Re-pick on
+	-- arrival OR after WanderRepickSeconds stuck (a weave point can land in a wall) so it
+	-- never wedges mid-investigation the way an un-timed wander target would.
+	state.investigateElapsed += sensed.dt
 	local anchor = state.lastHeard or sensed.rigPosition
 	if
 		state.investigateTarget == nil
 		or flatDistance(sensed.rigPosition, state.investigateTarget) < cfg.WaypointReachedDistance
+		or state.investigateElapsed >= cfg.WanderRepickSeconds
 	then
 		local a = math.random() * math.pi * 2
 		local j = math.random() * cfg.InvestigateJitter
 		state.investigateTarget = anchor + Vector3.new(math.cos(a) * j, 0, math.sin(a) * j)
+		state.investigateElapsed = 0
 	end
 	return { moveTarget = state.investigateTarget, speed = cfg.InvestigateSpeed, caught = nil }
 end

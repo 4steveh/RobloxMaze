@@ -225,6 +225,11 @@ Config.Monster = table.freeze({
 		AgentRadius = 2, -- CreatePath agent radius (fits the corridors)
 		AgentHeight = 5, -- CreatePath agent height
 		WaypointReachedDistance = 4, -- studs: advance to the next path waypoint within this distance
+		-- A wander target (the monkey's random nest-pace / investigate point) is normally only
+		-- abandoned on ARRIVAL. But ~1 in 5 random points land inside a wall, which the rig can
+		-- never reach to within WaypointReachedDistance -- so it would steer into the wall forever.
+		-- Re-pick a wander target after this long without reaching it, breaking that wedge.
+		WanderRepickSeconds = 4,
 		StallEpsilon = 0.5, -- studs: movement below this in a tick counts as "not moving"
 		StallTicks = 10, -- consecutive stalled ticks (with a target) that force a repath
 		MaxTickDtFactor = 4, -- clamp a tick's dt to PollInterval*this so a hitch can't skip FSM timers
