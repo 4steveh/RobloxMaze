@@ -75,8 +75,14 @@ RunService.Heartbeat:Connect(function(dt)
 	for player, s in state do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		-- Don't fight ExitService's win-freeze: leave Won players' WalkSpeed alone.
-		if not humanoid or humanoid.Health <= 0 or player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
+		-- Don't fight ExitService's win-freeze or DownedService's immobilization: leave Won
+		-- and Downed players' WalkSpeed alone.
+		if
+			not humanoid
+			or humanoid.Health <= 0
+			or player:GetAttribute(Attributes.GameState) == Enums.GameState.Won
+			or player:GetAttribute(Attributes.Downed) == true
+		then
 			continue
 		end
 

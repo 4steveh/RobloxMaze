@@ -52,6 +52,20 @@ local Attributes = {
 	-- producer/consumer discipline MonsterSpecies follows -- one constant, no literals.
 	MonsterState = "State",
 
+	-- boolean on a Player: true while DOWNED — caught by a monster but revivable (collapsed,
+	-- immobilized, bleeding out). Server-authoritative (DownedService). MonsterService,
+	-- SprintService, NoiseService and ExitService ALL skip a downed player; the client
+	-- DownedController renders the downed overlay + the teammate revive beacon from it.
+	Downed = "Downed",
+
+	-- number on a Player: `workspace:GetServerTimeNow()` at which a downed player bleeds out
+	-- (dies → checkpoint respawn) if not revived. The client renders the countdown bar from it.
+	DownedUntil = "DownedUntil",
+
+	-- number on a Player (0..1): revive progress while DOWNED (a teammate staying within
+	-- Config.Downed.ReviveRadius fills it). Server-authoritative; the client renders the bar.
+	ReviveProgress = "ReviveProgress",
+
 	-- number on a Player (0..1): server-computed audible NOISE this player is making
 	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
 	-- NoiseService (never client-set), read by the monkey's hearing detection and the

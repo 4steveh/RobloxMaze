@@ -14,6 +14,7 @@ local RunService = game:GetService("RunService")
 -- Canonical signal names -- the only place these strings live (the Tags/Remotes discipline).
 local Names = table.freeze({
 	RoundReset = "RoundReset", -- a new round is beginning: re-spawn keys, reset state/monsters/spawns
+	PlayerCaught = "PlayerCaught", -- a monster reached a player (payload: Player); DownedService decides down-vs-kill, so MonsterService stays out of player-life logic
 })
 
 local ServerSignals = {}

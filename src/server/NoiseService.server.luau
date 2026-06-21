@@ -44,6 +44,7 @@ local function isSilenced(player: Player): boolean
 	return player:GetAttribute(Attributes.InSafeRoom) == true
 		or player:GetAttribute(Attributes.GameState) == Enums.GameState.Won
 		or player:GetAttribute(Attributes.RespawnGrace) == true
+		or player:GetAttribute(Attributes.Downed) == true -- a downed player makes no controllable noise
 end
 
 local function onPlayerAdded(player: Player)

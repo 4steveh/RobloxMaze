@@ -8,6 +8,7 @@ local Tags = {
 	-- Active level markers (used from the skeleton milestone onward).
 	PlayerStart = "PlayerStart", -- spawn / checkpoint markers
 	ExitDoor = "ExitDoor", -- maze exit trigger volume(s)
+	ExitGate = "ExitGate", -- the SOLID door part(s) that physically block the exit; ExitService slides them open on a win
 	KeySpot = "KeySpot", -- candidate key spawn locations
 	SafeRoom = "SafeRoom", -- battery-recharge / safe zones
 

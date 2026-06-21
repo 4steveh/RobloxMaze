@@ -20,4 +20,19 @@ function Spatial.withinRange(position: Vector3, target: Vector3, radius: number)
 	return (position - target).Magnitude <= radius
 end
 
+-- Distance from `position` to the CLOSEST POINT on `part`'s oriented bounding box
+-- (0 if the point is inside). Unlike withinRange-to-center, this is robust to a
+-- large, thick, or off-centre part: a player pressed against a wide door triggers at
+-- the door SURFACE, not at its (possibly unreachable) centre. Used for the exit so a
+-- big gate part can never make the win unreachable.
+function Spatial.distanceToPart(position: Vector3, part: BasePart): number
+	local localPos = part.CFrame:PointToObjectSpace(position)
+	local half = part.Size / 2
+	-- Per-axis overshoot beyond the half-extents (clamped at 0 inside the box).
+	local dx = math.max(math.abs(localPos.X) - half.X, 0)
+	local dy = math.max(math.abs(localPos.Y) - half.Y, 0)
+	local dz = math.max(math.abs(localPos.Z) - half.Z, 0)
+	return Vector3.new(dx, dy, dz).Magnitude
+end
+
 return Spatial
