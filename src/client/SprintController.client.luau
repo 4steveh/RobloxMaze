@@ -39,6 +39,12 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+-- Alt-tab / focus loss does NOT fire InputEnded for a held key, which would otherwise
+-- leave the server believing sprint is held. Release explicitly on focus loss.
+UserInputService.WindowFocusReleased:Connect(function()
+	send(false)
+end)
+
 -- Drop the held-state on respawn so a new character never starts stuck-sprinting.
 Players.LocalPlayer.CharacterAdded:Connect(function()
 	send(false)

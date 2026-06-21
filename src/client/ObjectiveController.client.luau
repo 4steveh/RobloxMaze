@@ -57,6 +57,10 @@ local keyCollected = Remotes.get(Remotes.Names.KeyCollected)
 keyCollected.OnClientEvent:Connect(function(count)
 	refreshTracker(count or 0)
 end)
+-- Also sync from the KeyCount attribute, so a round reset to 0 updates the tracker.
+player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
+	refreshTracker(player:GetAttribute(Attributes.KeyCount) or 0)
+end)
 
 -- Intro banner (center, shown once at session start) -------------------------------
 local title = Instance.new("TextLabel")

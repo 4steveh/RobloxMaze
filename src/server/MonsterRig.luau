@@ -23,18 +23,61 @@ local Attributes = require(ReplicatedStorage.Attributes)
 local MonsterRig = {}
 
 -- A cosmetic segment: out of collision/queries/balance, ready to be Motor6D-animated.
-local function cosmeticPart(name: string, size: Vector3, color: Color3): Part
+local function cosmeticPart(name: string, size: Vector3, color: Color3, material: Enum.Material?): Part
 	local p = Instance.new("Part")
 	p.Name = name
 	p.Size = size
 	p.Color = color
-	p.Material = Enum.Material.SmoothPlastic
+	p.Material = material or Enum.Material.SmoothPlastic
 	p.Anchored = false
 	p.CanCollide = false
 	p.CanQuery = false
 	p.CanTouch = false
 	p.Massless = true
+	p.CastShadow = true -- the creature throws a shadow up the corridor before you see it
 	return p
+end
+
+-- The eye-glow for ANY rig: the dynamic EyeGlow PointLight (the ChaseFX flares this) PLUS
+-- two small Neon eyes on the host's front (host-local -Z), so the creature reads as a FACE
+-- in the fog and the species colour tells red-bunny from yellow-monkey at a glance. Placed
+-- in the host's own frame (orientation-correct for any head), welded so they ride the gait.
+local function addEyeGlow(host: BasePart, cfg)
+	local glow = Instance.new("PointLight")
+	glow.Name = "EyeGlow"
+	glow.Color = cfg.EyeGlowColor
+	glow.Brightness = cfg.EyeGlowBrightness
+	glow.Range = cfg.EyeGlowRange
+	glow.Parent = host
+
+	local hs = host.Size
+	local eyeSize = math.clamp(math.min(hs.X, hs.Y, hs.Z) * 0.22, 0.12, 0.6)
+	local sideDist = math.max(hs.X * 0.2, eyeSize * 0.8)
+	local upDist = hs.Y * 0.08
+	local fwdDist = hs.Z * 0.5
+	local rig = host.Parent
+	for _, sign in { -1, 1 } do
+		local eye = Instance.new("Part")
+		eye.Name = "Eye"
+		eye.Shape = Enum.PartType.Ball
+		eye.Size = Vector3.new(eyeSize, eyeSize, eyeSize)
+		eye.Color = cfg.EyeGlowColor
+		eye.Material = Enum.Material.Neon
+		eye.Anchored = false
+		eye.CanCollide = false
+		eye.CanQuery = false
+		eye.CanTouch = false
+		eye.Massless = true
+		eye.CastShadow = false
+		local offset = CFrame.new(sideDist * sign, upDist, -fwdDist) -- host-local -Z = forward
+		eye.CFrame = host.CFrame * offset
+		eye.Parent = rig
+		local weld = Instance.new("Weld")
+		weld.Part0 = host
+		weld.Part1 = eye
+		weld.C0 = offset
+		weld.Parent = eye
+	end
 end
 
 local function joint(name: string, part0: BasePart, part1: BasePart, c0: CFrame, c1: CFrame)
@@ -57,6 +100,7 @@ local function buildMeshBody(rig: Model, root: BasePart, source: BasePart, cfg)
 	body.CanQuery = false
 	body.CanTouch = false
 	body.Massless = true
+	body.CastShadow = true
 	body.Parent = rig
 	joint(
 		"BodyJoint",
@@ -76,29 +120,26 @@ end
 -- Config.Monster.Anim.Monkey.)
 local function buildPrimate(rig: Model, root: BasePart, cfg): BasePart
 	local dark = cfg.BodyColor
+	local mat = cfg.BodyMaterial -- matted/fleshy override (nil -> SmoothPlastic); this is what a
+	-- fresh build with no generated mesh assets actually renders, so it carries the look.
 	local rad = math.rad
 
 	-- Torso (the animatable trunk). Slight forward hunch baked into the BodyJoint rest.
-	local torso = cosmeticPart("Body", Vector3.new(1.7, 1.5, 2.3), dark)
+	local torso = cosmeticPart("Body", Vector3.new(1.7, 1.5, 2.3), dark, mat)
 	torso.Parent = rig
 	joint("BodyJoint", root, torso, CFrame.new(0, cfg.ModelYOffset, 0) * CFrame.Angles(rad(12), 0, 0), CFrame.new())
 
-	-- Head, jutting forward and a little down (hosts the eye-glow).
-	local head = cosmeticPart("CHead", Vector3.new(1.2, 1.1, 1.2), dark)
+	-- Head, jutting forward and a little down (hosts the eye-glow + Neon eyes).
+	local head = cosmeticPart("CHead", Vector3.new(1.2, 1.1, 1.2), dark, mat)
 	head.Shape = Enum.PartType.Ball
 	head.Parent = rig
 	joint("CHead", torso, head, CFrame.new(0, 0.45, -1.45), CFrame.new())
-	local glow = Instance.new("PointLight")
-	glow.Name = "EyeGlow"
-	glow.Color = cfg.EyeGlowColor
-	glow.Brightness = cfg.EyeGlowBrightness
-	glow.Range = cfg.EyeGlowRange
-	glow.Parent = head
+	addEyeGlow(head, cfg)
 
 	-- A limb segment pivoting at one end: C0 places the joint on the torso (with a rest
 	-- angle), C1 puts the pivot at the limb's TOP so it swings from there (not its centre).
 	local function limb(name: string, size: Vector3, c0: CFrame, pivotFromCentre: number)
-		local part = cosmeticPart(name, size, dark)
+		local part = cosmeticPart(name, size, dark, mat)
 		part.Parent = rig
 		joint(name, torso, part, c0, CFrame.new(0, pivotFromCentre, 0))
 	end
@@ -114,7 +155,7 @@ local function buildPrimate(rig: Model, root: BasePart, cfg): BasePart
 	limb("LegR", legSize, CFrame.new(0.6, -0.45, 0.85) * CFrame.Angles(rad(-18), 0, 0), 0.8)
 
 	-- Tail (pivot at the base near the torso rear).
-	local tail = cosmeticPart("Tail", Vector3.new(0.35, 0.35, 1.7), dark)
+	local tail = cosmeticPart("Tail", Vector3.new(0.35, 0.35, 1.7), dark, mat)
 	tail.Parent = rig
 	joint("Tail", torso, tail, CFrame.new(0, 0.25, 1.15) * CFrame.Angles(rad(22), 0, 0), CFrame.new(0, 0, -0.85))
 
@@ -160,6 +201,7 @@ local function buildPartsRig(rig: Model, root: BasePart, cfg, partsModel: Model)
 			mp.CanQuery = false
 			mp.CanTouch = false
 			mp.Massless = true
+			mp.CastShadow = true -- real mesh limbs throw a shadow (Lighting.Technology = Future)
 			mp.Parent = rig
 		end
 	end
@@ -184,12 +226,7 @@ local function buildPartsRig(rig: Model, root: BasePart, cfg, partsModel: Model)
 
 	local cHead = rig:FindFirstChild("CHead")
 	local glowHost = cHead or body
-	local glow = Instance.new("PointLight")
-	glow.Name = "EyeGlow"
-	glow.Color = cfg.EyeGlowColor
-	glow.Brightness = cfg.EyeGlowBrightness
-	glow.Range = cfg.EyeGlowRange
-	glow.Parent = glowHost
+	addEyeGlow(glowHost, cfg)
 	return body
 end
 
@@ -234,12 +271,7 @@ function MonsterRig.build(species: string, cfg, spawnPart: BasePart, parent: Ins
 		built = buildPartsRig(rig, root, cfg, meshSource) ~= nil
 	elseif meshSource and meshSource:IsA("BasePart") then
 		local body = buildMeshBody(rig, root, meshSource, cfg)
-		local glow = Instance.new("PointLight")
-		glow.Name = "EyeGlow"
-		glow.Color = cfg.EyeGlowColor
-		glow.Brightness = cfg.EyeGlowBrightness
-		glow.Range = cfg.EyeGlowRange
-		glow.Parent = body
+		addEyeGlow(body, cfg)
 		built = true
 	end
 	if not built then

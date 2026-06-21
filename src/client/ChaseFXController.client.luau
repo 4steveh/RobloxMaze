@@ -15,9 +15,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Enums = require(ReplicatedStorage.Enums)
+local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 local C = Config.Chase
-local STATE = "State"
+local STATE = Attributes.MonsterState
 local player = Players.LocalPlayer
 
 -- Dedicated grade (composes over the place's static ColorGrading/ColorCorrection).
@@ -70,8 +72,13 @@ makeBand(UDim2.fromScale(1 - th, 0), UDim2.fromScale(th, 1), 180) -- right
 
 -- Cache each eye-glow's base so we can restore it when the monster stops hunting.
 local glowBase = {} -- [PointLight] = { b = Brightness, r = Range }
+local glowByRig = {} -- [rig] = PointLight, cached so we don't recurse the rig every frame
 local function glowOf(rig)
-	local g = rig:FindFirstChild("EyeGlow", true)
+	local g = glowByRig[rig]
+	if not (g and g.Parent) then
+		g = rig:FindFirstChild("EyeGlow", true)
+		glowByRig[rig] = g
+	end
 	if g and g:IsA("PointLight") then
 		if not glowBase[g] then
 			glowBase[g] = { b = g.Brightness, r = g.Range }
@@ -85,7 +92,7 @@ local current = 0
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local monsters = Workspace:FindFirstChild("Monsters")
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
 
 	local target = 0
 	local nearestAggro, nearestDist, nearestProx = nil, math.huge, 0

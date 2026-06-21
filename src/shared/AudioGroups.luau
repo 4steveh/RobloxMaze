@@ -50,14 +50,45 @@ function AudioGroups.get(name: string): SoundGroup
 	return groups[name] or groups.Master
 end
 
+-- Active ducks per bus, so overlapping ducks compose correctly. [SoundGroup] = { [token] = factor }.
+local activeDucks = {}
+local nextDuckToken = 0
+
 -- Duck a bus to `factor` of its Config volume for `seconds`, then restore -- so a win
 -- jingle or a jumpscare scream can punch through the ambient/monster beds.
+--
+-- Overlap-safe: the bus always sits at the DEEPEST currently-active duck, and an expiring
+-- duck restores only to the deepest duck still active (or base if none) -- so a shallow,
+-- later duck expiring can't yank a deeper, still-active duck back to base (an audible mix
+-- pop at exactly the most dramatic moments -- e.g. a second scare during a respawn duck).
 function AudioGroups.duck(name: string, factor: number, seconds: number)
 	local g = AudioGroups.get(name)
 	local base = Config.Audio.Groups[name] or g.Volume
-	TweenService:Create(g, TweenInfo.new(0.12), { Volume = base * factor }):Play()
+
+	local ducks = activeDucks[g]
+	if not ducks then
+		ducks = {}
+		activeDucks[g] = ducks
+	end
+	nextDuckToken += 1
+	local token = nextDuckToken
+	ducks[token] = factor
+
+	local function deepestFactor()
+		local f = nil
+		for _, fac in ducks do
+			if f == nil or fac < f then
+				f = fac
+			end
+		end
+		return f
+	end
+
+	TweenService:Create(g, TweenInfo.new(0.12), { Volume = base * deepestFactor() }):Play()
 	task.delay(seconds, function()
-		TweenService:Create(g, TweenInfo.new(0.5), { Volume = base }):Play()
+		ducks[token] = nil
+		local f = deepestFactor()
+		TweenService:Create(g, TweenInfo.new(0.5), { Volume = if f ~= nil then base * f else base }):Play()
 	end)
 end
 

@@ -13,11 +13,14 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
+local Enums = require(ReplicatedStorage.Enums)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 local player = Players.LocalPlayer
 
@@ -25,6 +28,7 @@ local battery = Config.Flashlight.BatteryMax
 local lightOn = true -- starts on
 local inSafeRoom = false -- driven ONLY by server remotes, never by local detection
 local light = nil -- the current SpotLight (rebuilt each character)
+local emitter = nil -- invisible part the SpotLight rides; aimed at the camera each frame
 local flickerPhase = 0
 
 -- Publish the on/off state so PlayerSFXController can play the toggle click (local).
@@ -40,29 +44,75 @@ local function setupLight(character)
 	if player.Character ~= character then
 		return
 	end
-	local existing = head:FindFirstChild("Flashlight")
-	if existing then
-		existing:Destroy()
+	-- Clean any prior emitter (a fast respawn can leave one behind).
+	local prior = character:FindFirstChild("FlashlightEmitter")
+	if prior then
+		prior:Destroy()
 	end
+
+	-- The SpotLight rides an invisible emitter part (not the head): we CFrame the emitter
+	-- to the head position but oriented along the CAMERA each frame, so the beam points
+	-- where you LOOK (pitch included) instead of where the torso faces.
+	local part = Instance.new("Part")
+	part.Name = "FlashlightEmitter"
+	part.Size = Vector3.new(0.2, 0.2, 0.2)
+	part.Transparency = 1
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Massless = true
+	part.CFrame = head.CFrame
+	part.Parent = character
 
 	local spot = Instance.new("SpotLight")
 	spot.Name = "Flashlight"
 	spot.Range = Config.Flashlight.Range
 	spot.Angle = Config.Flashlight.Angle
 	spot.Brightness = Config.Flashlight.Brightness
-	spot.Shadows = Config.Flashlight.Shadows -- monsters throw a shadow before you see them (needs ShadowMap/Future)
-	spot.Face = Enum.NormalId.Front
-	-- Head-aligned for now: the light points where the head faces. Camera-aligned
-	-- aiming -- updating the light's CFrame each RenderStep to follow the camera --
-	-- is the later upgrade.
-	spot.Parent = head
+	spot.Shadows = Config.Flashlight.Shadows -- monsters throw a shadow before you see them (Future tech on)
+	spot.Face = Enum.NormalId.Front -- beam along the emitter's LookVector, which we aim at the camera
+	spot.Parent = part
+	emitter = part
 	light = spot
 end
 
--- Stub: extra flicker when a monster is near. Returns 0..1 (0 = none). Monsters
--- arrive in a later milestone; the hook is wired now so the light already reacts.
+-- Extra flicker when a HUNTING monster is near: returns 0..1 (subtracted from beam
+-- brightness). A fear beat + a tell that something is on you. Reads only replicated rig
+-- State + position (exploit-safe), same as ChaseFXController. 0 when nothing hunts.
 local function monsterProximityFlicker()
-	return 0
+	local FL = Config.Flashlight
+	if FL.MonsterFlickerMaxScale <= 0 then
+		return 0
+	end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
+	if not (hrp and monsters) then
+		return 0
+	end
+	local threat = 0
+	for _, rig in monsters:GetChildren() do
+		local st = rig:GetAttribute(Attributes.MonsterState)
+		if st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate or st == Enums.MonsterState.Alert then
+			local rRoot = rig:FindFirstChild("HumanoidRootPart")
+			if rRoot then
+				local d = (rRoot.Position - hrp.Position).Magnitude
+				local prox = math.clamp((FL.MonsterFlickerStartDistance - d) / FL.MonsterFlickerStartDistance, 0, 1)
+				if prox > threat then
+					threat = prox
+				end
+			end
+		end
+	end
+	if threat <= 0 then
+		return 0
+	end
+	-- An erratic stutter that deepens with closeness (an occasional harder dropout).
+	local osc = 0.5 + 0.5 * math.sin(os.clock() * FL.MonsterFlickerSpeed)
+	local dropout = if math.random() < 0.1 * threat then 1 else 0
+	return math.clamp(threat * FL.MonsterFlickerMaxScale * (0.55 * osc + 0.6 * dropout), 0, 0.95)
 end
 
 local function onCharacterAdded(character)
@@ -78,6 +128,7 @@ end
 player.CharacterAdded:Connect(onCharacterAdded)
 player.CharacterRemoving:Connect(function()
 	light = nil
+	emitter = nil
 	inSafeRoom = false
 end)
 
@@ -102,6 +153,23 @@ leftRemote.OnClientEvent:Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function(deltaTime)
+	-- Aim: keep the emitter at the head but rotate it toward the CAMERA look (smoothed),
+	-- so the beam follows where you point -- including up/down -- not where the torso faces.
+	if emitter then
+		local character = player.Character
+		local head = character and character:FindFirstChild("Head")
+		local camera = Workspace.CurrentCamera
+		if head and camera then
+			local pos = head.Position
+			local camCF = camera.CFrame
+			-- Use the camera's own up vector (always perpendicular to its look) so lookAt
+			-- never degenerates to NaN when looking straight up or down.
+			local look = CFrame.lookAt(pos, pos + camCF.LookVector, camCF.UpVector).Rotation
+			local alpha = math.min(deltaTime * Config.Flashlight.AimSmoothing, 1)
+			emitter.CFrame = emitter.CFrame.Rotation:Lerp(look, alpha) + pos
+		end
+	end
+
 	-- Battery: recharge while in a SafeRoom; otherwise drain while lit. Clamp [0, max].
 	if inSafeRoom then
 		battery = math.min(Config.Flashlight.BatteryMax, battery + Config.Flashlight.RechargePerSecond * deltaTime)

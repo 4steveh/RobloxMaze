@@ -20,6 +20,8 @@ local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 -- We own WHEN characters load, not just WHERE they go: no engine auto-respawn.
 Players.CharacterAutoLoads = false
@@ -28,18 +30,20 @@ Players.CharacterAutoLoads = false
 -- under this folder. Per-player -- not one shared pad -- so concurrent respawns in
 -- future co-op never race over a single pad's position.
 local spawnsFolder = Instance.new("Folder")
-spawnsFolder.Name = "PlayerSpawns"
+spawnsFolder.Name = WorldFolders.PlayerSpawns
 spawnsFolder.Parent = Workspace
 
 local spawnLocations = {}
+local graceToken = {} -- [player] = number, bumped each spawn so a stale grace timer can't clear a fresh grace
 local warnedNoMarker = false
 
 -- Where this player should spawn: their checkpoint CFrame if SafeRoomService has
 -- recorded one, otherwise the first PlayerStart marker. nil if neither exists.
-local function spawnCFrame(player)
+local function spawnCFrame(player, forceStart)
 	-- Honor the Config toggle: when AtCheckpoint is off, ignore any recorded
-	-- checkpoint and always fall through to a PlayerStart marker.
-	if Config.Respawn.AtCheckpoint then
+	-- checkpoint and always fall through to a PlayerStart marker. `forceStart` (a new
+	-- round) likewise ignores the checkpoint so everyone restarts at the PlayerStart.
+	if Config.Respawn.AtCheckpoint and not forceStart then
 		local checkpoint = player:GetAttribute(Attributes.Checkpoint)
 		if typeof(checkpoint) == "CFrame" then
 			return checkpoint
@@ -74,13 +78,13 @@ end
 -- SpawnUpOffset lifts the PAD above the marker (not a character CFrame) to clear
 -- the floor. With no target resolved we still load -- never leave a player
 -- characterless -- and warn once.
-local function respawn(player)
+local function respawn(player, forceStart)
 	local spawn = spawnLocations[player]
 	if not spawn then
 		return -- player has left; nothing to spawn onto
 	end
 
-	local target = spawnCFrame(player)
+	local target = spawnCFrame(player, forceStart)
 	if target then
 		spawn.CFrame = CFrame.new(target.Position + Vector3.new(0, Config.Respawn.SpawnUpOffset, 0))
 	elseif not warnedNoMarker then
@@ -101,11 +105,18 @@ local function onCharacterAdded(player, character)
 	-- character can never be instantly re-caught at its spawn. The visible ForceField
 	-- is only the legibility cue -- the real guard is the sensing skip (a catch sets
 	-- Humanoid.Health = 0 directly, which a ForceField would not block anyway).
+	-- Token this spawn so a fast death->respawn (within InvulnSeconds) can't have the
+	-- PREVIOUS character's grace timer fire and strip the fresh character's grace early.
+	graceToken[player] = (graceToken[player] or 0) + 1
+	local mine = graceToken[player]
 	player:SetAttribute(Attributes.RespawnGrace, true)
 	local shield = Instance.new("ForceField")
 	shield.Visible = true
 	shield.Parent = character
 	task.delay(Config.Respawn.InvulnSeconds, function()
+		if graceToken[player] ~= mine then
+			return -- a newer spawn owns grace now; leave it intact
+		end
 		player:SetAttribute(Attributes.RespawnGrace, false)
 		if shield.Parent then
 			shield:Destroy()
@@ -149,5 +160,14 @@ Players.PlayerRemoving:Connect(function(player)
 	if spawn then
 		spawn:Destroy()
 		spawnLocations[player] = nil
+	end
+	graceToken[player] = nil
+end)
+
+-- New round: respawn everyone at the PlayerStart for a fresh run (task.spawn so a
+-- LoadCharacter yield never blocks the signal fire / other listeners).
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	for _, player in Players:GetPlayers() do
+		task.spawn(respawn, player, true)
 	end
 end)

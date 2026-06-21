@@ -7,6 +7,8 @@
 -- All client-side and uncontested (allowed per CLAUDE.md).
 
 local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -57,17 +59,38 @@ end, function(part)
 	end
 end)
 
--- Drift the music box in and out on a randomized gap.
+-- A continuous detune wobble while a box plays: a music box that is winding down / haunted,
+-- never a clean loop. Cheap (only touches currently-playing boxes).
+local boxClock = 0
+RunService.Heartbeat:Connect(function(dt)
+	boxClock += dt
+	local wobble = math.sin(boxClock * AM.MusicBoxWobbleHz * math.pi * 2) * AM.MusicBoxPitchWobble
+	for _, s in boxes do
+		if s.IsPlaying then
+			s.PlaybackSpeed = 1 + wobble
+		end
+	end
+end)
+
+-- Drift the music box in and out on a randomized gap: each drift-in starts at a random point
+-- in the (long) clip and FADES out (rather than cutting), so no two are quite the same.
 task.spawn(function()
 	while true do
 		task.wait(rng:NextNumber(AM.MusicBoxMinGap, AM.MusicBoxMaxGap))
 		for _, s in boxes do
 			if s.Parent and not s.IsPlaying then
-				s.TimePosition = 0
+				s.Volume = AM.MusicBoxVolume
+				s.TimePosition = rng:NextNumber(0, AM.MusicBoxStartRange)
 				s:Play()
 				task.delay(AM.MusicBoxPlaySeconds, function()
-					if s.Parent then
-						s:Stop()
+					if s.Parent and s.IsPlaying then
+						TweenService:Create(s, TweenInfo.new(AM.MusicBoxFadeSeconds), { Volume = 0 }):Play()
+						task.delay(AM.MusicBoxFadeSeconds, function()
+							if s.Parent then
+								s:Stop()
+								s.Volume = AM.MusicBoxVolume
+							end
+						end)
 					end
 				end)
 			end

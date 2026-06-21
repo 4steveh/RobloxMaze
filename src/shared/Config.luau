@@ -25,7 +25,19 @@ Config.Flashlight = table.freeze({
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
 	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
 	Shadows = true, -- the flashlight casts dynamic shadows (monsters throw a shadow before you see them).
-	-- NOTE: requires Lighting.Technology = ShadowMap or Future (a Studio Lighting property; can't be set from a script).
+	-- Requires Lighting.Technology = Future (or ShadowMap), which EnvironmentService sets on boot
+	-- (it IS script-writable, contrary to an earlier note here) -- so this works out of the box.
+
+	-- Camera-aligned aiming: the beam tracks where you LOOK (incl. pitch up/down), not
+	-- where the torso faces -- so the flashlight feels like an instrument you point.
+	AimSmoothing = 20, -- per-second lerp rate the beam rotates toward the camera look (snappy but weighty)
+
+	-- Monster-proximity flicker: a hunting monster nearby makes the beam stutter/dim --
+	-- a fear beat AND a tell that something is hunting you. Render-only (reads replicated
+	-- rig State + distance, exploit-safe). Set MonsterFlickerMaxScale = 0 to disable.
+	MonsterFlickerStartDistance = 40, -- studs: a hunter within this begins the stutter
+	MonsterFlickerMaxScale = 0.5, -- max fraction of brightness the stutter can subtract (0..1)
+	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -67,6 +79,27 @@ Config.Respawn = table.freeze({
 -- Win ---------------------------------------------------------------------------
 Config.Win = table.freeze({
 	FreezeDuration = 3, -- seconds the player is frozen during the win celebration
+})
+
+-- Round loop --------------------------------------------------------------------
+-- The game LOOPS (it used to be single-shot: keys spawned once, a win latched forever).
+-- RoundService watches for a win (any player's GameState -> Won), holds a celebration,
+-- then begins a fresh round via ServerSignals.RoundReset -- which re-randomizes the keys,
+-- clears win/key/checkpoint state, respawns everyone at the start, and resets the monsters.
+Config.Round = table.freeze({
+	WinCelebrationSeconds = 5, -- hold after a win (> Win.FreezeDuration) before the next round begins
+	ResetSettleSeconds = 1, -- guard window after a reset before another win can start a new round
+})
+
+-- Aggression: the maze gets HOTTER as you near the win -------------------------
+-- Monster move speed + sense range scale up with how close ANY player is to winning
+-- (best player's KeyCount / RequiredToWin, server-read -- no new state). A flat, encounter-
+-- optional stroll becomes a tightening hunt, and going quiet vs the monkey gets harder the
+-- closer you are to escaping. Applied in MonsterService (it owns monster behaviour).
+Config.Aggression = table.freeze({
+	Enabled = true,
+	MaxSpeedBonus = 0.18, -- +18% monster WalkSpeed at full aggression (all keys collected)
+	MaxRangeBonus = 0.35, -- +35% sight/hearing range at full aggression
 })
 
 -- HUD (icon-forward; counts come from gameplay Config, never hardcoded) ----------
@@ -165,6 +198,7 @@ Config.Monster = table.freeze({
 			-- Shared.AgentRadius, so movement is unchanged.
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- physics-root (collision box) dimensions
 			BodyColor = Color3.fromRGB(220, 218, 225), -- fallback rig tone (pale, faintly sickly)
+			BodyMaterial = Enum.Material.Fabric, -- matted plush (the primitive fallback that a no-assets build renders)
 			BodyAssetName = "BunnyBody", -- the AI-generated MULTI-PART mascot (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -0.9, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
@@ -208,6 +242,7 @@ Config.Monster = table.freeze({
 			-- Rig (no mesh yet -> a primitive proxy until Phase 5 builds an articulated body).
 			BodySize = Vector3.new(2.5, 3.5, 2.5), -- <= bunny so corridor fit is identical (do NOT exceed)
 			BodyColor = Color3.fromRGB(60, 48, 44), -- dark/matted: a distinct silhouette from the pale bunny
+			BodyMaterial = Enum.Material.Concrete, -- rough matte hide (the primitive fallback a no-assets build renders)
 			BodyAssetName = "MonkeyBody", -- the AI-generated MULTI-PART gorilla (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -1.5, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
@@ -230,8 +265,9 @@ Config.Monster = table.freeze({
 			MinMoveSpeed = 1.5, -- studs/s below which the rig is "idle" (breathing, hop frozen)
 			StrideDistance = 3.8, -- studs of travel per hop -> sets cadence (strideHz = speed / this)
 			ChaseStrideScale = 0.72, -- multiply hop distance in Chase (shorter, more frantic hops)
-			HopHeight = 0.85, -- studs the TORSO arcs up (gentler now -- the jointed legs carry the hop)
-			ChaseHopScale = 0.85, -- flatter hops while chasing
+			HopHeight = 0.85, -- studs the TORSO arcs up at a full lunge hop (legs carry the rest)
+			WalkArcScale = 0.3, -- patrol body arc as a fraction of the hop (a low creep, not a hop)
+			WalkLegScale = 0.55, -- patrol leg-swing amplitude (alternating walk) vs the full hop extend
 			HopPitch = 0.18, -- rad torso pitch through the hop
 			ForwardSurge = 0.5, -- studs the torso lunges forward through the air
 			LegExtend = 0.95, -- rad the legs extend (push) at the plant and tuck at the apex
@@ -295,6 +331,8 @@ Config.Noise = table.freeze({
 	IdleNoise = 0.0, -- noise while still
 	RisePerSecond = 4.0, -- NoiseLevel rises toward target fast (sprinting is immediately loud)
 	DecayPerSecond = 1.3, -- and decays slowly (you must COMMIT to quiet to shed the monkey)
+	MaxPlausibleSpeed = 80, -- studs/s above which a position delta is a TELEPORT (respawn jump),
+	-- not real running -- such a tick is ignored for noise so a respawn can't spike NoiseLevel.
 
 	-- HUD noise meter (NoiseMeterController) -- teaches the monkey's counter: a marker sits
 	-- at the monkey's HearThreshold, so the player SEES when they cross into "audible".
@@ -347,6 +385,65 @@ Config.Lighting = table.freeze({
 	FlickerMinScale = 0.35, -- brightness floor as a fraction of the fixture's base brightness
 	FlickerOffChance = 0.015, -- per-frame chance a fixture briefly cuts out entirely
 	FlickerOffTime = 0.12, -- seconds a fixture stays cut out
+})
+
+-- Environment / atmosphere (the mood foundation, reproduced FROM CODE) ------------
+-- The whole horror mood (lighting model, darkness, fog, post-FX, base grade) used to
+-- live only in unsaved Studio place content, so a fresh `rojo build` rendered flat,
+-- bright, and fogless and the flashlight/monster shadows silently no-op'd. This section
+-- + EnvironmentService rebuild it deterministically on boot: dark, foggy, contrasty,
+-- with real-time shadows on (so the flashlight throws a creature's shadow up the wall
+-- before you see it). Tune the dread here; nothing about it is in the place anymore.
+Config.Environment = table.freeze({
+	-- Core Lighting. Future tech is what makes the flashlight + monster shadows real
+	-- (it IS script-writable). ClockTime 0 = midnight; the practical flicker fixtures
+	-- and your flashlight are the only real light, which is the point.
+	Technology = Enum.Technology.Future,
+	ClockTime = 0, -- midnight
+	GeographicLatitude = 0,
+	Brightness = 1, -- sun/moon brightness (low: an interior at night)
+	ExposureCompensation = -0.15, -- pull the whole frame down a touch
+	Ambient = Color3.fromRGB(10, 10, 14), -- shadowed-area fill (very dark)
+	OutdoorAmbient = Color3.fromRGB(18, 18, 26), -- skylight fill (dark, faintly cold)
+	EnvironmentDiffuseScale = 0.25, -- low ambient bounce -> darkness has weight
+	EnvironmentSpecularScale = 0.25,
+	GlobalShadows = true,
+	ShadowSoftness = 0.5,
+
+	-- Atmosphere (the modern volumetric haze; supersedes legacy Fog under Future).
+	Atmosphere = table.freeze({
+		Density = 0.42, -- corridor haze: distant things dissolve into the dark
+		Offset = 0.1,
+		Color = Color3.fromRGB(150, 150, 162), -- cool grey air
+		Decay = Color3.fromRGB(70, 70, 85), -- the colour haze decays toward
+		Glare = 0.1,
+		Haze = 2.2, -- the milky "you can't see far" look
+	}),
+
+	-- Bloom: only genuinely bright things bleed (eye-glow, neon keys, flicker tubes),
+	-- so light sources read as menacing in the dark rather than washing the scene.
+	Bloom = table.freeze({
+		Intensity = 0.7,
+		Size = 24,
+		Threshold = 1.05,
+	}),
+
+	-- Depth of field: subtle cinematic fall-off so the far dark reads as depth.
+	DepthOfField = table.freeze({
+		FarIntensity = 0.12,
+		FocusDistance = 28,
+		InFocusRadius = 22,
+		NearIntensity = 0.1,
+	}),
+
+	-- Base colour grade (a SEPARATE ColorCorrection named "BaseGrade"; the client's
+	-- ChaseFX grade composes ON TOP of it, so the chase wash never corrupts this).
+	BaseGrade = table.freeze({
+		Brightness = -0.02,
+		Contrast = 0.14,
+		Saturation = -0.2, -- drained, sickly
+		TintColor = Color3.fromRGB(206, 212, 224), -- a cold cast
+	}),
 })
 
 -- Player movement: sprint + stamina ---------------------------------------------
@@ -468,6 +565,12 @@ Config.Audio = table.freeze({
 		MusicBoxMaxGap = 110,
 		MusicBoxPlaySeconds = 14, -- seconds of the (long) music-box clip to play per drift-in
 		MusicBoxRange = 75, -- studs RollOffMaxDistance for the 3D music box
+		-- Dread ramp: each drift-in starts at a random point in the (long) clip, with a slight
+		-- detune wobble (a haunted, winding-down box) and a fade-out instead of a hard stop.
+		MusicBoxStartRange = 30, -- max random TimePosition (s) the clip starts from
+		MusicBoxPitchWobble = 0.06, -- +/- PlaybackSpeed wobble (a detuning music box)
+		MusicBoxWobbleHz = 0.4, -- Hz of the detune wobble
+		MusicBoxFadeSeconds = 1.5, -- fade-out time when a drift-in ends (vs an abrupt Stop)
 	}),
 
 	-- Monster cues: 3D breathing/footsteps on the rig + a non-spatial heartbeat the
@@ -488,6 +591,40 @@ Config.Audio = table.freeze({
 		HeartbeatMaxDistance = 8, -- studs at which it is loudest/fastest
 		HeartbeatMinRate = 0.75, -- PlaybackSpeed at start distance
 		HeartbeatMaxRate = 1.9, -- PlaybackSpeed at closest
+		-- The heartbeat is gated by the nearest rig's STATE (see MonsterAudioController): it
+		-- ramps full only when a monster is HUNTING you (Chase/Investigate), softer when it
+		-- merely heard you (Alert, scaled by Config.Chase.AlertScale), and stays silent for a
+		-- patrolling/searching monster UNLESS it is right on top of you (this panic radius) --
+		-- so the heartbeat MEANS "it is hunting you", not "a monster exists somewhere".
+		HeartbeatPanicRadius = 10, -- studs: a non-hunting rig within this still spikes the pulse
+
+		-- Per-species voice: same verified clips, but pitched/levelled so the two monsters
+		-- sound distinct by ear (the bunny lighter + higher, the monkey heavier + lower).
+		SpeciesMix = table.freeze({
+			Bunny = table.freeze({ Pitch = 1.12, VolumeScale = 0.9 }),
+			Monkey = table.freeze({ Pitch = 0.82, VolumeScale = 1.12 }),
+		}),
+
+		-- Wall occlusion: a rig behind geometry is muffled (low-pass) and quieter, so "it's
+		-- close but WHERE" tension returns. One throttled ray (player -> rig) decides LoS.
+		Occlusion = table.freeze({
+			Interval = 0.2, -- seconds between occlusion raycasts per rig (throttled)
+			VolumeScale = 0.45, -- volume multiplier while occluded
+			HighGain = -26, -- EqualizerSoundEffect HighGain (dB) while occluded (muffled highs)
+			MidGain = -9, -- ...mid attenuation
+			LowGain = 0, -- lows pass (a dull thud through the wall)
+		}),
+	}),
+
+	-- Adaptive TENSION bed on the Music bus: silent when safe, swelling as a monster HUNTS
+	-- you (driven by the same replicated rig State + distance the heartbeat reads), so the
+	-- score builds with the threat. Reuses the verified dread-drone asset, pitched low.
+	-- (Crossfaded by MonsterAudioController; the win jingle is the only other Music cue.)
+	Music = table.freeze({
+		TensionId = "rbxassetid://140704980462451", -- the dread drone, pitched down into a tension layer
+		TensionMaxVolume = 0.55, -- volume at full threat
+		TensionPitch = 0.7, -- pitched down for dread
+		FadeRate = 2.5, -- per-second lerp of the tension volume toward the threat target
 	}),
 
 	-- Player SFX (footsteps, flashlight click, low-battery beep). All uncontested.
@@ -504,6 +641,17 @@ Config.Audio = table.freeze({
 		FlashlightClickVolume = 0.5,
 		LowBatteryBeepId = "rbxassetid://8500212950",
 		LowBatteryBeepVolume = 0.45,
+		-- The low-battery beep QUICKENS as the battery empties (an audible countdown to dark),
+		-- then sounds once pitched-down when it hits zero (the light "dies"). Reuses the beep id.
+		LowBatteryBeepMaxInterval = 2.2, -- seconds between beeps at the low-battery threshold
+		LowBatteryBeepMinInterval = 0.45, -- ...shrinking to this as the battery nears empty
+		LightDiesPitch = 0.6, -- PlaybackSpeed of the final beep when the battery reaches zero
+		-- Footstep loudness tracks the movement TIER, so your ears confirm the NoiseMeter:
+		-- sprinting is loud, walking normal, creeping near-silent.
+		FootstepCreepSpeed = 6, -- studs/s below which steps are near-silent
+		FootstepSprintSpeed = 22, -- studs/s at/above which steps are loudest
+		FootstepCreepVolumeScale = 0.35, -- volume multiplier while creeping
+		FootstepSprintVolumeScale = 1.6, -- volume multiplier while sprinting
 	}),
 
 	-- One-shot event stingers wired to the EXISTING remotes.

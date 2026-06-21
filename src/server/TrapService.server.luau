@@ -54,42 +54,51 @@ local function fire(part, t, player: Player)
 	end
 end
 
+-- Per-trap state-machine step, factored out so it can be pcall-isolated: a throw on
+-- one trap (a destroyed victim character, a nil HRP) must not freeze every trap.
+local function processTrap(part, t, now)
+	if not part.Parent then
+		return
+	end
+	if t.state == "cooldown" then
+		if now >= (t.cooldownUntil or 0) then
+			t.state = "armed"
+		end
+	elseif t.state == "armed" then
+		for _, player in Players:GetPlayers() do
+			if eligible(player) then
+				local hrp = PlayerUtil.livingRootPart(player)
+				if hrp and Spatial.withinRange(hrp.Position, part.Position, C.TriggerRadius) then
+					t.state = "windup"
+					t.windupStart = now
+					t.victim = player
+					trapRemote:FireAllClients(part, "windup") -- telegraph flash + click
+					break
+				end
+			end
+		end
+	elseif t.state == "windup" then
+		local player = t.victim
+		local hrp = player and eligible(player) and PlayerUtil.livingRootPart(player)
+		local stillIn = hrp ~= nil and Spatial.withinRange(hrp.Position, part.Position, C.TriggerRadius)
+		if not stillIn then
+			-- they reacted and left in time -> disarm with a brief cooldown.
+			t.state = "cooldown"
+			t.cooldownUntil = now + C.RearmSeconds
+			t.victim = nil
+		elseif now - (t.windupStart or now) >= C.WindupSeconds then
+			fire(part, t, player)
+		end
+	end
+end
+
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
 	for part, t in traps do
-		if not part.Parent then
-			continue
-		end
-		if t.state == "cooldown" then
-			if now >= (t.cooldownUntil or 0) then
-				t.state = "armed"
-			end
-		elseif t.state == "armed" then
-			for _, player in Players:GetPlayers() do
-				if eligible(player) then
-					local hrp = PlayerUtil.livingRootPart(player)
-					if hrp and Spatial.withinRange(hrp.Position, part.Position, C.TriggerRadius) then
-						t.state = "windup"
-						t.windupStart = now
-						t.victim = player
-						trapRemote:FireAllClients(part, "windup") -- telegraph flash + click
-						break
-					end
-				end
-			end
-		elseif t.state == "windup" then
-			local player = t.victim
-			local hrp = player and eligible(player) and PlayerUtil.livingRootPart(player)
-			local stillIn = hrp ~= nil and Spatial.withinRange(hrp.Position, part.Position, C.TriggerRadius)
-			if not stillIn then
-				-- they reacted and left in time -> disarm with a brief cooldown.
-				t.state = "cooldown"
-				t.cooldownUntil = now + C.RearmSeconds
-				t.victim = nil
-			elseif now - (t.windupStart or now) >= C.WindupSeconds then
-				fire(part, t, player)
-			end
+		local ok, err = pcall(processTrap, part, t, now)
+		if not ok then
+			warn("[TrapService] tick error for a trap (skipped this tick):", err)
 		end
 	end
 end

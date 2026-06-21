@@ -17,6 +17,7 @@ local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
+local Enums = require(ReplicatedStorage.Enums)
 
 local HUD = Config.HUD
 local requiredKeys = Config.Keys.RequiredToWin
@@ -220,20 +221,49 @@ local function showToast(text, color, seconds)
 	end)
 end
 
+-- Cached ExitDoor list (the exit arrow read Discovery.getAll every frame; observe once).
+local exitDoors = {}
+Discovery.observe(Tags.ExitDoor, function(inst)
+	if inst:IsA("BasePart") then
+		table.insert(exitDoors, inst)
+	end
+end, function(inst)
+	local i = table.find(exitDoors, inst)
+	if i then
+		table.remove(exitDoors, i)
+	end
+end)
+
 -- Remotes ---------------------------------------------------------------------
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
 local exitLockedRemote = Remotes.get(Remotes.Names.ExitLocked)
 
-keyCollectedRemote.OnClientEvent:Connect(function(count)
-	keyCount = count or keyCount
+-- Pip count syncs from the server-authoritative KeyCount attribute, so it is correct on
+-- pickup AND on a round reset to 0 (the remote below only drives the chime/toast juice).
+local function setKeyCount(count)
+	keyCount = count or 0
 	refreshPips()
+end
+setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
+player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
+	setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
+end)
+
+keyCollectedRemote.OnClientEvent:Connect(function(count)
 	keyCollectSound:Play()
-	showToast(string.format("KEY %d/%d", keyCount, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
+	showToast(string.format("KEY %d/%d", count or keyCount, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
 end)
 
 gameWonRemote.OnClientEvent:Connect(function()
 	winOverlay.Visible = true
+end)
+
+-- A new round (GameState back to Playing) hides the win overlay.
+player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
+	if player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won then
+		winOverlay.Visible = false
+	end
 end)
 
 exitLockedRemote.OnClientEvent:Connect(function()
@@ -287,8 +317,8 @@ RunService.RenderStepped:Connect(function()
 		local door = nil
 		if rootPart then
 			local nearest = math.huge
-			for _, candidate in Discovery.getAll(Tags.ExitDoor) do
-				if candidate:IsA("BasePart") then
+			for _, candidate in exitDoors do
+				if candidate.Parent then
 					local dist = (candidate.Position - rootPart.Position).Magnitude
 					if dist < nearest then
 						nearest, door = dist, candidate

@@ -42,29 +42,61 @@ if player.Character then
 end
 player.CharacterAdded:Connect(setupCharacter)
 
-local function playFootstep()
+-- Footstep loudness scales with the movement TIER, so your ears confirm the NoiseMeter:
+-- creeping near-silent, walking normal, sprinting loud (and quicker cadence, below).
+local function footstepVolumeScale(speed)
+	local W = Config.Player.WalkSpeed
+	if speed <= PS.FootstepCreepSpeed then
+		return PS.FootstepCreepVolumeScale
+	elseif speed < W then
+		local t = (speed - PS.FootstepCreepSpeed) / math.max(W - PS.FootstepCreepSpeed, 0.001)
+		return PS.FootstepCreepVolumeScale + (1 - PS.FootstepCreepVolumeScale) * t
+	elseif speed <= PS.FootstepSprintSpeed then
+		local t = (speed - W) / math.max(PS.FootstepSprintSpeed - W, 0.001)
+		return 1 + (PS.FootstepSprintVolumeScale - 1) * t
+	end
+	return PS.FootstepSprintVolumeScale
+end
+
+local function playFootstep(speed)
 	if not (footstep and footstep.Parent) then
 		return
 	end
 	footstep.SoundId = PS.FootstepIds[rng:NextInteger(1, #PS.FootstepIds)]
 	footstep.PlaybackSpeed = 0.9 + rng:NextNumber(0, 0.2)
+	footstep.Volume = PS.FootstepVolume * footstepVolumeScale(speed)
 	footstep:Play()
 end
 
--- Footsteps + low-battery edge, on one render loop.
+local function playBeep(volume, pitch)
+	local s = Instance.new("Sound")
+	s.SoundId = PS.LowBatteryBeepId
+	s.Volume = volume
+	s.PlaybackSpeed = pitch
+	s.SoundGroup = uiBus
+	s.Parent = SoundService
+	s:Play()
+	Debris:AddItem(s, 2)
+end
+
+-- Footsteps + the low-battery countdown, on one render loop.
 local stepClock = 0
-local wasLow = false
+local beepClock = 0
+local wasDead = false
 RunService.RenderStepped:Connect(function(dt)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
 	if humanoid and humanoid.Health > 0 then
+		local v = if hrp then hrp.AssemblyLinearVelocity else Vector3.zero
+		local speed = Vector3.new(v.X, 0, v.Z).Magnitude
 		local moving = humanoid.MoveDirection.Magnitude > 0.1
 		local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
 		if moving and grounded then
 			stepClock -= dt
 			if stepClock <= 0 then
-				playFootstep()
-				local rate = math.max(0.5, humanoid.WalkSpeed / Config.Player.WalkSpeed)
+				playFootstep(speed)
+				local rate = math.max(0.5, speed / Config.Player.WalkSpeed)
 				stepClock = PS.FootstepWalkInterval / rate
 			end
 		else
@@ -72,22 +104,28 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- Low-battery beep on the downward crossing of the threshold.
+	-- Low battery: the beep QUICKENS as the battery empties (a countdown to dark), then a
+	-- single pitched-down beep when the light "dies" at zero.
 	local battery = player:GetAttribute(Attributes.FlashlightBattery)
 	if battery == nil then
 		battery = Config.Flashlight.BatteryMax
 	end
-	local low = battery <= Config.Flashlight.LowBatteryThreshold
-	if low and not wasLow then
-		local s = Instance.new("Sound")
-		s.SoundId = PS.LowBatteryBeepId
-		s.Volume = PS.LowBatteryBeepVolume
-		s.SoundGroup = uiBus
-		s.Parent = SoundService
-		s:Play()
-		Debris:AddItem(s, 1)
+	if battery <= Config.Flashlight.LowBatteryThreshold and battery > 0 then
+		beepClock -= dt
+		if beepClock <= 0 then
+			playBeep(PS.LowBatteryBeepVolume, 1)
+			local frac = math.clamp(battery / Config.Flashlight.LowBatteryThreshold, 0, 1) -- 1 at threshold -> 0 empty
+			beepClock = PS.LowBatteryBeepMinInterval
+				+ (PS.LowBatteryBeepMaxInterval - PS.LowBatteryBeepMinInterval) * frac
+		end
+	else
+		beepClock = 0
 	end
-	wasLow = low
+	local dead = battery <= 0
+	if dead and not wasDead then
+		playBeep(PS.LowBatteryBeepVolume * 1.2, PS.LightDiesPitch)
+	end
+	wasDead = dead
 end)
 
 -- Flashlight toggle click (the attribute flips only on an actual toggle).

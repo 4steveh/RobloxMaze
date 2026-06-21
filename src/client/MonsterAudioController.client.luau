@@ -1,10 +1,12 @@
 --!nonstrict
 -- MonsterAudioController.client.luau
--- The highest-tension audio: 3D breathing + footsteps parented to each monster rig
--- (auto-attenuating with distance), a non-spatial heartbeat the client scales by the
--- nearest rig's distance, and a Patrol->Chase sting keyed off the server's per-player
--- MonsterStateChanged remote. All rendering; the rig State + the remote are the
--- server-authoritative truth. Reads only the replicated rig position (exploit-safe).
+-- The highest-tension audio. Per rig: 3D breathing + footsteps pitched/levelled PER SPECIES
+-- (the bunny lighter+higher, the monkey heavier+lower) so you can tell which is near by ear,
+-- and MUFFLED by wall occlusion (a throttled player->rig ray + a low-pass) so "it's close
+-- but WHERE" tension returns. Globally: a non-spatial heartbeat and an adaptive TENSION bed
+-- that both ramp with the nearest HUNTING rig (its replicated State + distance) -- so the
+-- score and the pulse mean "it is hunting YOU", not merely "a monster exists somewhere".
+-- All rendering; the rig State + remotes are the server-authoritative truth (exploit-safe).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,13 +17,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Enums = require(ReplicatedStorage.Enums)
+local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
 local MA = Config.Audio.Monster
+local MUS = Config.Audio.Music
+local OCC = MA.Occlusion
 local player = Players.LocalPlayer
 local monsterBus = AudioGroups.get("Monster")
 
--- Non-spatial heartbeat (volume + rate ramp with nearest-rig closeness).
+-- Non-spatial heartbeat (volume + rate ramp with the nearest HUNTING rig's closeness).
 local heartbeat = Instance.new("Sound")
 heartbeat.Name = "Heartbeat"
 heartbeat.SoundId = MA.HeartbeatId
@@ -30,6 +36,17 @@ heartbeat.Volume = 0
 heartbeat.SoundGroup = monsterBus
 heartbeat.Parent = SoundService
 heartbeat:Play()
+
+-- Adaptive tension bed on the Music bus: silent when safe, swelling while hunted.
+local tension = Instance.new("Sound")
+tension.Name = "TensionBed"
+tension.SoundId = MUS.TensionId
+tension.Looped = true
+tension.Volume = 0
+tension.PlaybackSpeed = MUS.TensionPitch
+tension.SoundGroup = AudioGroups.get("Music")
+tension.Parent = SoundService
+tension:Play()
 
 -- One-shot chase sting, fired when a rig chasing THIS player enters Chase.
 local sting = Instance.new("Sound")
@@ -47,7 +64,11 @@ stateRemote.OnClientEvent:Connect(function(state)
 end)
 
 -- Per-rig 3D sounds (breathing loop + footstep one-shots) on the rig's HRP.
-local rigAudio = {} -- [rig] = { hrp, breathing, footstep, lastPos, stepAccum }
+local rigAudio = {} -- [rig] = { hrp, breathing, footstep, lastPos, stepAccum, mix, occluded, occAccum, breathBase, footBase }
+
+local function mixFor(species)
+	return MA.SpeciesMix[species] or MA.SpeciesMix[Enums.MonsterType.Bunny]
+end
 
 local function makeSpatial(id, volume, range, looped)
 	local s = Instance.new("Sound")
@@ -58,7 +79,46 @@ local function makeSpatial(id, volume, range, looped)
 	s.RollOffMinDistance = Config.Audio.RollOffMin
 	s.RollOffMaxDistance = range
 	s.SoundGroup = monsterBus
+	-- Low-pass for wall occlusion (toggled on when a wall is between you and the rig).
+	local eq = Instance.new("EqualizerSoundEffect")
+	eq.Name = "Occlude"
+	eq.Enabled = false
+	eq.Parent = s
 	return s
+end
+
+-- A ray from the player to the rig, blocked only by world geometry (exclude every rig and
+-- every player character), so "occluded" means a WALL is between you and the monster.
+local function occlusionParams(rig)
+	local filter = { rig }
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
+	if monsters then
+		table.insert(filter, monsters)
+	end
+	for _, p in Players:GetPlayers() do
+		if p.Character then
+			table.insert(filter, p.Character)
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = filter
+	return params
+end
+
+local function applyOcclusion(a, occluded)
+	a.occluded = occluded
+	a.breathing.Volume = if occluded then a.breathBase * OCC.VolumeScale else a.breathBase
+	a.footstep.Volume = if occluded then a.footBase * OCC.VolumeScale else a.footBase
+	for _, snd in { a.breathing, a.footstep } do
+		local eq = snd:FindFirstChild("Occlude")
+		if eq then
+			eq.Enabled = occluded
+			eq.HighGain = OCC.HighGain
+			eq.MidGain = OCC.MidGain
+			eq.LowGain = OCC.LowGain
+		end
+	end
 end
 
 local function addRig(rig)
@@ -70,14 +130,31 @@ local function addRig(rig)
 		if not hrp or rigAudio[rig] then
 			return
 		end
-		local breathing = makeSpatial(MA.BreathingId, MA.BreathingVolume, MA.BreathingRange, true)
+		local species = rig:GetAttribute(Attributes.MonsterSpecies) or Enums.MonsterType.Bunny
+		local mix = mixFor(species)
+		local breathBase = MA.BreathingVolume * mix.VolumeScale
+		local footBase = MA.FootstepVolume * mix.VolumeScale
+
+		local breathing = makeSpatial(MA.BreathingId, breathBase, MA.BreathingRange, true)
 		breathing.Name = "Breathing"
+		breathing.PlaybackSpeed = mix.Pitch
 		breathing.Parent = hrp
 		breathing:Play()
-		local footstep = makeSpatial(MA.FootstepId, MA.FootstepVolume, MA.FootstepRange, false)
+		local footstep = makeSpatial(MA.FootstepId, footBase, MA.FootstepRange, false)
 		footstep.Name = "Footstep"
 		footstep.Parent = hrp
-		rigAudio[rig] = { hrp = hrp, breathing = breathing, footstep = footstep, lastPos = hrp.Position, stepAccum = 0 }
+		rigAudio[rig] = {
+			hrp = hrp,
+			breathing = breathing,
+			footstep = footstep,
+			lastPos = hrp.Position,
+			stepAccum = 0,
+			mix = mix,
+			occluded = false,
+			occAccum = math.random() * OCC.Interval, -- stagger the rays across rigs
+			breathBase = breathBase,
+			footBase = footBase,
+		}
 	end)
 end
 
@@ -90,45 +167,74 @@ local function removeRig(rig)
 	end
 end
 
-local monstersFolder = Workspace:WaitForChild("Monsters")
+local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
 for _, rig in monstersFolder:GetChildren() do
 	addRig(rig)
 end
 monstersFolder.ChildAdded:Connect(addRig)
 monstersFolder.ChildRemoved:Connect(removeRig)
 
-RunService.RenderStepped:Connect(function()
-	-- Footsteps: a step every FootstepStride studs the rig travels.
-	for _, a in rigAudio do
+-- The closeness of the nearest HUNTING rig (0..1), scaled by its state: full for
+-- Chase/Investigate, softer for Alert, and only if right on top of you otherwise.
+local function threatLevel(phrp): number
+	local best = 0
+	for rig, a in rigAudio do
+		if a.hrp.Parent then
+			local d = (a.hrp.Position - phrp.Position).Magnitude
+			local st = rig:GetAttribute(Attributes.MonsterState)
+			local scale = 0
+			if st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate then
+				scale = 1
+			elseif st == Enums.MonsterState.Alert then
+				scale = Config.Chase.AlertScale
+			elseif d <= MA.HeartbeatPanicRadius then
+				scale = 0.6 -- a patrolling monster RIGHT next to you still spikes the pulse
+			end
+			if scale > 0 and d <= MA.HeartbeatStartDistance then
+				local span = MA.HeartbeatStartDistance - MA.HeartbeatMaxDistance
+				local t = math.clamp((MA.HeartbeatStartDistance - d) / span, 0, 1) * scale
+				if t > best then
+					best = t
+				end
+			end
+		end
+	end
+	return best
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	local character = player.Character
+	local phrp = character and character:FindFirstChild("HumanoidRootPart")
+
+	-- Per rig: footstep cadence + throttled wall occlusion.
+	for rig, a in rigAudio do
 		if a.hrp.Parent then
 			local moved = (a.hrp.Position - a.lastPos).Magnitude
 			a.lastPos = a.hrp.Position
 			a.stepAccum += moved
 			if a.stepAccum >= MA.FootstepStride then
 				a.stepAccum = 0
-				a.footstep.PlaybackSpeed = 0.9 + math.random() * 0.2
+				a.footstep.PlaybackSpeed = a.mix.Pitch * (0.9 + math.random() * 0.2)
 				a.footstep:Play()
+			end
+
+			a.occAccum += dt
+			if a.occAccum >= OCC.Interval and phrp then
+				a.occAccum = 0
+				local origin = phrp.Position
+				local hit = Workspace:Raycast(origin, a.hrp.Position - origin, occlusionParams(rig))
+				local occluded = hit ~= nil
+				if occluded ~= a.occluded then
+					applyOcclusion(a, occluded)
+				end
 			end
 		end
 	end
 
-	-- Heartbeat: ramp by the nearest rig's distance to the local character.
-	local character = player.Character
-	local phrp = character and character:FindFirstChild("HumanoidRootPart")
-	local nearest = math.huge
-	if phrp then
-		for _, a in rigAudio do
-			if a.hrp.Parent then
-				nearest = math.min(nearest, (a.hrp.Position - phrp.Position).Magnitude)
-			end
-		end
-	end
-	if phrp and nearest <= MA.HeartbeatStartDistance then
-		local span = MA.HeartbeatStartDistance - MA.HeartbeatMaxDistance
-		local t = math.clamp((MA.HeartbeatStartDistance - nearest) / span, 0, 1)
-		heartbeat.Volume = MA.HeartbeatVolume * t
-		heartbeat.PlaybackSpeed = MA.HeartbeatMinRate + (MA.HeartbeatMaxRate - MA.HeartbeatMinRate) * t
-	else
-		heartbeat.Volume = 0
-	end
+	-- Global: gated heartbeat + adaptive tension bed, both driven by the nearest hunter.
+	local bestT = if phrp then threatLevel(phrp) else 0
+	heartbeat.Volume = MA.HeartbeatVolume * bestT
+	heartbeat.PlaybackSpeed = MA.HeartbeatMinRate + (MA.HeartbeatMaxRate - MA.HeartbeatMinRate) * bestT
+	local target = MUS.TensionMaxVolume * bestT
+	tension.Volume += (target - tension.Volume) * math.min(dt * MUS.FadeRate, 1)
 end)

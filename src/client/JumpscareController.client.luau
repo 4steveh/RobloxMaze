@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
 local player = Players.LocalPlayer
@@ -89,7 +90,7 @@ scream.SoundGroup = AudioGroups.get("Master")
 scream.Parent = SoundService
 
 local function findMonsterRig()
-	local monsters = Workspace:FindFirstChild("Monsters")
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
 	if not monsters then
 		return nil
 	end
@@ -116,9 +117,15 @@ local function populateViewport()
 	if not (head and head:IsA("BasePart")) then
 		return false
 	end
+	-- Capture the species eye-glow colour BEFORE the clone loop strips it: it's what makes
+	-- the climax unmistakably red-bunny vs yellow-monkey and it dominates the viewport light.
+	local liveGlow = rig:FindFirstChild("EyeGlow", true)
+	local glowColor = (liveGlow and liveGlow:IsA("PointLight") and liveGlow.Color) or Color3.fromRGB(255, 90, 80)
+
 	local headCF = head.CFrame
 	local container = Instance.new("Model")
 	container.Name = "ScareModel"
+	local clonedHead = nil
 	for _, part in ipairs(rig:GetDescendants()) do
 		if part:IsA("BasePart") and part.Transparency < 1 and part.Name ~= "HumanoidRootPart" then
 			local c = part:Clone()
@@ -127,8 +134,25 @@ local function populateViewport()
 			c.CanCollide = false
 			c.CFrame = headCF:ToObjectSpace(part.CFrame) -- head at the origin, facing -Z
 			c.Parent = container
+			if part == head then
+				clonedHead = c
+			end
 		end
 	end
+
+	-- Restore a punchy eye-glow on the cloned face (ClearAllChildren stripped the original),
+	-- and bias the viewport lighting toward that hue so the glow -- not flat fill -- reads.
+	local glowHost = clonedHead or container:FindFirstChildWhichIsA("BasePart")
+	if glowHost then
+		local glow = Instance.new("PointLight")
+		glow.Color = glowColor
+		glow.Brightness = 6
+		glow.Range = 12
+		glow.Parent = glowHost
+	end
+	viewport.LightColor = Color3.new(1, 1, 1):Lerp(glowColor, 0.5)
+	viewport.Ambient = Color3.fromRGB(20, 12, 12)
+
 	container.Parent = viewport
 	return true
 end
