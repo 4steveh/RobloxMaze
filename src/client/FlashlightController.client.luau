@@ -161,7 +161,10 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local camera = Workspace.CurrentCamera
 		if head and camera then
 			local pos = head.Position
-			local look = CFrame.lookAt(pos, pos + camera.CFrame.LookVector).Rotation
+			local camCF = camera.CFrame
+			-- Use the camera's own up vector (always perpendicular to its look) so lookAt
+			-- never degenerates to NaN when looking straight up or down.
+			local look = CFrame.lookAt(pos, pos + camCF.LookVector, camCF.UpVector).Rotation
 			local alpha = math.min(deltaTime * Config.Flashlight.AimSmoothing, 1)
 			emitter.CFrame = emitter.CFrame.Rotation:Lerp(look, alpha) + pos
 		end

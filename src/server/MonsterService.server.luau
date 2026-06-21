@@ -136,7 +136,7 @@ local function sensePlayers(rig: Model, cfg, rangeMul: number, params: RaycastPa
 		local toPlayer = hrp.Position - root.Position
 		local distance = toPlayer.Magnitude
 
-		-- Sight: within cfg.DetectRange, inside the cone, unobstructed by a wall.
+		-- Sight: within the (aggression-scaled) detect range, inside the cone, unobstructed.
 		local visible = false
 		if distance <= detectRange and distance > 0 then
 			local angle = math.deg(math.acos(math.clamp(facing:Dot(toPlayer.Unit), -1, 1)))

@@ -142,11 +142,14 @@ local function populateViewport()
 
 	-- Restore a punchy eye-glow on the cloned face (ClearAllChildren stripped the original),
 	-- and bias the viewport lighting toward that hue so the glow -- not flat fill -- reads.
-	local glow = Instance.new("PointLight")
-	glow.Color = glowColor
-	glow.Brightness = 6
-	glow.Range = 12
-	glow.Parent = clonedHead or container.PrimaryPart or container:FindFirstChildWhichIsA("BasePart")
+	local glowHost = clonedHead or container:FindFirstChildWhichIsA("BasePart")
+	if glowHost then
+		local glow = Instance.new("PointLight")
+		glow.Color = glowColor
+		glow.Brightness = 6
+		glow.Range = 12
+		glow.Parent = glowHost
+	end
 	viewport.LightColor = Color3.new(1, 1, 1):Lerp(glowColor, 0.5)
 	viewport.Ambient = Color3.fromRGB(20, 12, 12)
 

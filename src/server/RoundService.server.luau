@@ -26,12 +26,14 @@ local R = Config.Round
 local roundReset = ServerSignals.get(ServerSignals.Names.RoundReset)
 
 local resetting = false
+local roundGen = 0 -- bumped each reset, so a straggler win from an older round can't re-reset
 
 local function beginNewRound()
 	if resetting then
 		return -- a reset is already in flight (another player won in the same window)
 	end
 	resetting = true
+	roundGen += 1
 	roundReset:Fire() -- each system resets its own state (keys, win, checkpoints, spawns, monsters)
 	task.wait(R.ResetSettleSeconds)
 	resetting = false
@@ -39,7 +41,13 @@ end
 
 local function onWin()
 	-- Shared round: let the winner's celebration play, then loop everyone into a fresh round.
+	-- Capture the round we won in: if a SECOND player also won during this celebration and
+	-- their reset already fired, our generation is stale -- don't reset the fresh round again.
+	local myGen = roundGen
 	task.wait(R.WinCelebrationSeconds)
+	if myGen ~= roundGen then
+		return
+	end
 	beginNewRound()
 end
 
