@@ -98,23 +98,32 @@ local function shuffleInPlace(t)
 end
 
 local function spawnRoundKeys()
-	local spawnPositions = {}
+	-- Keys avoid two kinds of spot: inside a monster's spawn bubble (so a required key never
+	-- sits in the bunny's lap), AND right on top of a PlayerStart (so you can't auto-collect
+	-- one the instant you spawn -- you must go FIND them).
+	local monsterSpawns, playerStarts = {}, {}
 	for _, m in Discovery.getAll(Tags.MonsterSpawn) do
 		if m:IsA("BasePart") then
-			table.insert(spawnPositions, m.Position)
+			table.insert(monsterSpawns, m.Position)
 		end
 	end
-	local function nearAnySpawn(pos)
-		for _, sp in spawnPositions do
-			-- Flat XZ distance, consistent with the bunny's ground-plane sensing.
-			if
-				(Vector3.new(pos.X, 0, pos.Z) - Vector3.new(sp.X, 0, sp.Z)).Magnitude
-				< Config.Monster.Shared.NoKeySpawnRadius
-			then
+	for _, m in Discovery.getAll(Tags.PlayerStart) do
+		if m:IsA("BasePart") then
+			table.insert(playerStarts, m.Position)
+		end
+	end
+	-- Flat XZ distance (ground-plane), consistent with the monsters' sensing.
+	local function nearAny(pos, list, radius)
+		for _, p in list do
+			if (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(p.X, 0, p.Z)).Magnitude < radius then
 				return true
 			end
 		end
 		return false
+	end
+	local function nearAvoid(pos)
+		return nearAny(pos, monsterSpawns, Config.Monster.Shared.NoKeySpawnRadius)
+			or nearAny(pos, playerStarts, Config.Keys.NoSpawnNearStartRadius)
 	end
 
 	-- Partition spots: prefer "far" ones; "near" are a fallback only if there aren't
@@ -122,7 +131,7 @@ local function spawnRoundKeys()
 	local far, near = {}, {}
 	for _, marker in Discovery.getAll(Tags.KeySpot) do
 		if marker:IsA("BasePart") then
-			table.insert(if nearAnySpawn(marker.Position) then near else far, marker)
+			table.insert(if nearAvoid(marker.Position) then near else far, marker)
 		end
 	end
 	shuffleInPlace(far)
