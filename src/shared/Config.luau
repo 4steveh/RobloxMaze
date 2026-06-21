@@ -13,20 +13,21 @@ local Config = {}
 -- light remaining".
 Config.Flashlight = table.freeze({
 	BatteryMax = 100, -- seconds of light on a full battery
-	DrainPerSecond = 1, -- battery seconds spent per real second while ON
-	RechargePerSecond = 5, -- battery seconds restored per real second while in a (server-gated) SafeRoom
+	DrainPerSecond = 0.5, -- gentler drain: ~200s of light (was a punishing 100s that left players blind)
+	RechargePerSecond = 5, -- fast recharge while in a (server-gated) SafeRoom
+	IdleRechargePerSecond = 2.5, -- passive recharge while the light is OFF (anywhere), so it NEVER permanently dies
 	LowBatteryThreshold = 20, -- seconds remaining at/below which the light dims/flickers
 
 	Range = 64, -- SpotLight.Range, studs
 	Angle = 75, -- SpotLight.Angle, degrees (wide enough to actually navigate by)
-	Brightness = 3.2, -- SpotLight.Brightness (a strong, dependable beam that cuts the haze)
+	Brightness = 4, -- SpotLight.Brightness (a strong near-field that beats the fog + reads on dim iPad screens)
 
 	ToggleKey = Enum.KeyCode.F, -- key that toggles the flashlight on/off
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
 	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
-	Shadows = true, -- the flashlight casts dynamic shadows (monsters throw a shadow before you see them).
-	-- Requires Lighting.Technology = Future (or ShadowMap), which EnvironmentService sets on boot
-	-- (it IS script-writable, contrary to an earlier note here) -- so this works out of the box.
+	Shadows = false, -- OFF for a reliable lit cone: SpotLight shadows only exist under Future, and
+	-- under Future-on-mobile they darken/patch the beam -- a known "flashlight looks broken" cause.
+	-- We run ShadowMap now (see Config.Environment.Technology), where this is a no-op anyway.
 
 	-- Camera-aligned aiming: the beam tracks where you LOOK (incl. pitch up/down), not
 	-- where the torso faces -- so the flashlight feels like an instrument you point.
@@ -466,29 +467,34 @@ Config.Environment = table.freeze({
 	-- Core Lighting. Future tech is what makes the flashlight + monster shadows real
 	-- (it IS script-writable). ClockTime 0 = midnight; the practical flicker fixtures
 	-- and your flashlight are the only real light, which is the point.
-	Technology = Enum.Technology.Future,
+	-- ShadowMap (NOT Future): Future falls back below graphics-quality 5 on mobile/iPad, where
+	-- the flashlight SpotLight goes dim/blocky or the scene washes out -- the #1 reason the
+	-- flashlight "doesn't work" + the map reads wrong on iPad. ShadowMap lights SpotLights
+	-- dependably at every tier and is faster on mobile (tradeoff: the flashlight no longer
+	-- casts a real-time monster shadow -- a gimmick we trade for mobile playability).
+	Technology = Enum.Technology.ShadowMap,
 	ClockTime = 0, -- midnight
 	GeographicLatitude = 0,
-	-- Dark + moody but NAVIGABLE: you can make out corridors and find your way with the
-	-- flashlight, without the map being a pitch-black "can't see anything" void. (Tuned up
-	-- from a near-blind setting that players couldn't navigate.)
-	Brightness = 2, -- sun/moon fill (a dim, moonlit interior)
-	ExposureCompensation = -0.05, -- a hair down, not a heavy crush
-	Ambient = Color3.fromRGB(24, 24, 30), -- shadowed-area fill (dark, but shapes still read)
-	OutdoorAmbient = Color3.fromRGB(30, 30, 40), -- skylight fill (dark, faintly cold)
-	EnvironmentDiffuseScale = 0.4, -- a little ambient bounce so unlit areas aren't solid black
+	-- Dark + moody but NAVIGABLE on mobile: carry baseline visibility on flat AMBIENT (which
+	-- the mobile quality scaler can't strip), keep ExposureCompensation at 0 (never negative --
+	-- it crushes blacks into mush on cheap panels), and keep fog thin so the flashlight reaches.
+	Brightness = 2.8, -- sun/moon fill (a dim, moonlit interior)
+	ExposureCompensation = 0, -- never negative on mobile
+	Ambient = Color3.fromRGB(40, 42, 50), -- readability floor: you can make out walls even light-off (nudged up after repeated "too dark")
+	OutdoorAmbient = Color3.fromRGB(44, 46, 56), -- skylight fill (dark, faintly cold)
+	EnvironmentDiffuseScale = 0.5, -- ambient bounce (helps PC; near-inert at midnight, not the floor)
 	EnvironmentSpecularScale = 0.25,
 	GlobalShadows = true,
 	ShadowSoftness = 0.5,
 
 	-- Atmosphere (the modern volumetric haze; supersedes legacy Fog under Future).
 	Atmosphere = table.freeze({
-		Density = 0.3, -- corridor haze: present, but the flashlight now reaches down a hall
+		Density = 0.22, -- thin: density darkens AND eats flashlight reach -- the top "can't see the next corner" culprit
 		Offset = 0.1,
 		Color = Color3.fromRGB(150, 150, 162), -- cool grey air
 		Decay = Color3.fromRGB(70, 70, 85), -- the colour haze decays toward
-		Glare = 0.1,
-		Haze = 1.5, -- a touch of the milky look without blinding you
+		Glare = 0.05,
+		Haze = 1.0, -- less milky wash, more silhouette contrast
 	}),
 
 	-- Bloom: only genuinely bright things bleed (eye-glow, neon keys, flicker tubes),
@@ -572,6 +578,30 @@ Config.Onboarding = table.freeze({
 	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
 	AlertTip = "It HEARD you — slow down and move quietly",
 	TipSeconds = 5, -- how long a tip holds before fading
+})
+
+-- On-screen touch controls (mobile / iPad) --------------------------------------
+-- Custom, clearly-visible buttons (bigger + more legible than the default
+-- ContextActionService auto-buttons). Each owning controller builds its own button at
+-- these coordinates, shown ONLY on touch devices; the keyboard keys still work on PC.
+-- They stack bottom-RIGHT above Roblox's built-in jump button without overlapping it or the
+-- movement thumbstick (bottom-left). Drop a real icon into `*IconImage` later.
+Config.TouchControls = table.freeze({
+	ButtonSize = 100, -- px square tap target
+	EdgeMargin = 26, -- px from the right edge
+	FlashlightBottomOffset = 250, -- px from the bottom (sits above the jump button)
+	SprintBottomOffset = 130, -- px from the bottom (closest to the thumb, below the flashlight)
+	BackgroundColor = Color3.fromRGB(18, 20, 26),
+	BackgroundTransparency = 0.3,
+	TextColor = Color3.fromRGB(245, 240, 230),
+	TextSize = 19,
+	FlashlightOnColor = Color3.fromRGB(245, 222, 120), -- ring tint while the light is ON
+	FlashlightOffColor = Color3.fromRGB(140, 142, 150), -- ...and while OFF
+	FlashlightLabel = "LIGHT",
+	FlashlightIconImage = "", -- TODO: a flashlight icon asset id
+	SprintColor = Color3.fromRGB(150, 220, 165),
+	SprintLabel = "RUN",
+	SprintIconImage = "", -- TODO: a run icon asset id
 })
 
 -- Feedback: legible event messaging (toasts + win/caught copy) --------------------
