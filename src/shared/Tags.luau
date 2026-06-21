@@ -14,6 +14,9 @@ local Tags = {
 	-- Runtime markers (applied by code, not placed in Studio).
 	ActiveKey = "ActiveKey", -- a key part live in the world this round; the client compass beacons these
 
+	-- Hazards.
+	Trap = "Trap", -- a telegraphed floor trap (red arrow); TrapService arms/fires it spatially
+
 	-- Monster markers.
 	MonsterSpawn = "MonsterSpawn", -- where the bunny enters the maze
 	MonkeySpawn = "MonkeySpawn", -- where the monkey nests/enters (placed in a different region)

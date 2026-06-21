@@ -20,6 +20,7 @@ local Names = table.freeze({
 	ExitLocked = "ExitLocked", -- server -> client: at the exit without enough keys (brief feedback)
 	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught by a monster (play the jumpscare)
 	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
+	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
 
 	-- CLIENT -> SERVER (the only inbound remote). Payload is HOSTILE: validate type and
 	-- rate-limit on the server (see SprintService). Carries the sprint key held-state.
@@ -35,6 +36,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.ExitLocked,
 	Names.MonsterCaught,
 	Names.MonsterStateChanged,
+	Names.TrapTriggered,
 	Names.SprintIntent,
 }
 
