@@ -81,6 +81,27 @@ Config.Win = table.freeze({
 	FreezeDuration = 3, -- seconds the player is frozen during the win celebration
 })
 
+-- Round loop --------------------------------------------------------------------
+-- The game LOOPS (it used to be single-shot: keys spawned once, a win latched forever).
+-- RoundService watches for a win (any player's GameState -> Won), holds a celebration,
+-- then begins a fresh round via ServerSignals.RoundReset -- which re-randomizes the keys,
+-- clears win/key/checkpoint state, respawns everyone at the start, and resets the monsters.
+Config.Round = table.freeze({
+	WinCelebrationSeconds = 5, -- hold after a win (> Win.FreezeDuration) before the next round begins
+	ResetSettleSeconds = 1, -- guard window after a reset before another win can start a new round
+})
+
+-- Aggression: the maze gets HOTTER as you near the win -------------------------
+-- Monster move speed + sense range scale up with how close ANY player is to winning
+-- (best player's KeyCount / RequiredToWin, server-read -- no new state). A flat, encounter-
+-- optional stroll becomes a tightening hunt, and going quiet vs the monkey gets harder the
+-- closer you are to escaping. Applied in MonsterService (it owns monster behaviour).
+Config.Aggression = table.freeze({
+	Enabled = true,
+	MaxSpeedBonus = 0.18, -- +18% monster WalkSpeed at full aggression (all keys collected)
+	MaxRangeBonus = 0.35, -- +35% sight/hearing range at full aggression
+})
+
 -- HUD (icon-forward; counts come from gameplay Config, never hardcoded) ----------
 Config.HUD = table.freeze({
 	-- Key pips (how many = Config.Keys.RequiredToWin)

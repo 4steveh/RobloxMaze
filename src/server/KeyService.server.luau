@@ -21,6 +21,7 @@ local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 local WorldFolders = require(ReplicatedStorage.WorldFolders)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 Remotes.init()
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
@@ -152,6 +153,25 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 spawnRoundKeys()
+
+-- New round (ServerSignals.RoundReset): clear any remaining keys, zero everyone's count
+-- (the attribute change re-syncs the HUD/objective), and re-randomize a fresh key layout.
+local function clearKeys()
+	for _, key in liveKeys do
+		if key.Parent then
+			key:Destroy()
+		end
+	end
+	table.clear(liveKeys)
+end
+
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	clearKeys()
+	for _, player in Players:GetPlayers() do
+		setCount(player, 0)
+	end
+	spawnRoundKeys()
+end)
 
 -- Per-player pickup scan, factored out so it can be pcall-isolated: a throw on one
 -- player (HRP cleared mid-frame, a key destroyed concurrently) must not freeze key

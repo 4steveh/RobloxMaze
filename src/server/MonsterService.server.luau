@@ -25,6 +25,7 @@ local Remotes = require(ReplicatedStorage.Remotes)
 local BunnyFSM = require(script.Parent.BunnyFSM)
 local MonkeyFSM = require(script.Parent.MonkeyFSM)
 local MonsterRig = require(script.Parent.MonsterRig)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 local STATE_ATTRIBUTE = Attributes.MonsterState -- on the rig model: current Enums.MonsterState
 
@@ -51,6 +52,24 @@ end
 
 -- Cross-species constants the tick loop reads directly (not per-rig).
 local SHARED = Config.Monster.Shared
+local AGGRO = Config.Aggression
+
+-- The maze's current aggression (0..1): how close the closest player is to winning
+-- (best KeyCount / RequiredToWin, server-read). Scales monster speed + sense range so the
+-- hunt tightens as the round nears its end. 0 when aggression is disabled.
+local function currentAggression(): number
+	if not AGGRO.Enabled then
+		return 0
+	end
+	local best = 0
+	for _, player in Players:GetPlayers() do
+		local kc = player:GetAttribute(Attributes.KeyCount) or 0
+		if kc > best then
+			best = kc
+		end
+	end
+	return math.clamp(best / math.max(Config.Keys.RequiredToWin, 1), 0, 1)
+end
 
 -- The roster: each species -> its FSM module, resolved cfg slice, and spawn tag. Adding
 -- a species is one row here (+ its Config slice + FSM module + a placed spawn marker).
@@ -89,11 +108,13 @@ end
 -- in a SafeRoom / Won / RespawnGrace (a brand-new player whose attributes are still nil
 -- is treated as eligible). SafeRoom/Won/Grace also silences the monkey (those players
 -- leave the sensed set entirely, so it can neither see nor hear them).
-local function sensePlayers(rig: Model, cfg): { any }
+local function sensePlayers(rig: Model, cfg, rangeMul: number): { any }
 	local root = rig.PrimaryPart
 	local eyePos = root.Position + Vector3.new(0, cfg.EyeHeight, 0)
 	local facing = root.CFrame.LookVector
 	local params = sightParams(rig)
+	-- Aggression widens the senses as the round nears its end (rangeMul >= 1).
+	local detectRange = cfg.DetectRange * rangeMul
 
 	local result = {}
 	for _, player in Players:GetPlayers() do
@@ -118,7 +139,7 @@ local function sensePlayers(rig: Model, cfg): { any }
 
 		-- Sight: within cfg.DetectRange, inside the cone, unobstructed by a wall.
 		local visible = false
-		if distance <= cfg.DetectRange and distance > 0 then
+		if distance <= detectRange and distance > 0 then
 			local angle = math.deg(math.acos(math.clamp(facing:Dot(toPlayer.Unit), -1, 1)))
 			if angle <= cfg.DetectHalfAngle then
 				local ray = hrp.Position - eyePos
@@ -131,7 +152,7 @@ local function sensePlayers(rig: Model, cfg): { any }
 		local noise = nil
 		if cfg.HearRange then
 			local level = player:GetAttribute(Attributes.NoiseLevel) or 0
-			noise = level * math.clamp(1 - distance / cfg.HearRange, 0, 1)
+			noise = level * math.clamp(1 - distance / (cfg.HearRange * rangeMul), 0, 1)
 		end
 
 		table.insert(result, { player = player, position = hrp.Position, visible = visible, noise = noise })
@@ -278,6 +299,21 @@ end
 -- FSM drops Chase/lastSeen so the bunny stops loitering on the kill site, the rig is
 -- sent home to its MonsterSpawn, and it goes dormant (senses nothing) through the
 -- respawn window -- so it can't already be on top of the player when they reappear.
+-- Clear a rig's FSM, send it home to its spawn, and make it dormant for the post-catch
+-- window. Shared by a catch (anti-spawn-camp) and a round reset (fresh start, no rig left
+-- loitering on a player from the previous round).
+local function repelHome(inst)
+	inst.state = inst.fsm.newState()
+	local spawnPart = inst.spawnPart
+	if spawnPart and inst.rig.PrimaryPart then
+		inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, inst.cfg.BodySize.Y, 0)))
+	end
+	inst.dormantUntil = os.clock() + inst.cfg.PostCatchDormantSeconds
+	inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
+	inst.prevState = inst.state.name
+	inst.prevTargetUserId = nil
+end
+
 local function catch(inst, player: Player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -288,16 +324,19 @@ local function catch(inst, player: Player)
 	caughtRemote:FireClient(player)
 
 	if inst.cfg.ResetToPatrolOnCatch then
-		inst.state = inst.fsm.newState()
-		local spawnPart = inst.spawnPart
-		if spawnPart and inst.rig.PrimaryPart then
-			inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, inst.cfg.BodySize.Y, 0)))
-		end
-		inst.dormantUntil = os.clock() + inst.cfg.PostCatchDormantSeconds
+		repelHome(inst)
 	end
 end
 
 spawnMonsters()
+
+-- New round: reset every rig (clear the FSM, send it home, brief dormancy) so no monster
+-- is left chasing a player from the round that just ended.
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	for _, inst in instances do
+		pcall(repelHome, inst)
+	end
+end)
 
 -- Server-authoritative tick on the shared poll cadence (never Touched). dt comes
 -- from os.clock deltas so FSM timers stay accurate even when ComputeAsync yields.
@@ -310,6 +349,11 @@ while true do
 	local dt = math.min(now - lastClock, Config.Spatial.PollInterval * SHARED.MaxTickDtFactor)
 	lastClock = now
 	local nodes = patrolNodePositions()
+	-- The hunt tightens as the round nears its end (computed once per tick, applied to
+	-- every rig's sense range and move speed).
+	local aggro = currentAggression()
+	local rangeMul = 1 + aggro * AGGRO.MaxRangeBonus
+	local speedMul = 1 + aggro * AGGRO.MaxSpeedBonus
 	for _, inst in instances do
 		-- Per-rig isolation: a throw on one rig (PrimaryPart cleared mid-frame, MoveTo
 		-- on a destroyed Humanoid, a raycast edge case) must NOT kill the loop and
@@ -328,12 +372,12 @@ while true do
 				rigPosition = root.Position,
 				patrolNodes = nodes,
 				homePosition = (inst.spawnPart and inst.spawnPart.Position) or root.Position, -- the nest/spawn
-				players = if dormant then {} else sensePlayers(rig, inst.cfg),
+				players = if dormant then {} else sensePlayers(rig, inst.cfg, rangeMul),
 			}
 			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
 			if humanoid then
-				humanoid.WalkSpeed = result.speed
+				humanoid.WalkSpeed = result.speed * speedMul
 			end
 			inst.mover.update(result.moveTarget, dt)
 

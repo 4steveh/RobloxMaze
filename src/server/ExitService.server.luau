@@ -17,6 +17,7 @@ local Enums = require(ReplicatedStorage.Enums)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 Remotes.init()
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
@@ -57,6 +58,14 @@ for _, player in Players:GetPlayers() do
 end
 Players.PlayerRemoving:Connect(function(player)
 	atLockedDoor[player] = nil
+end)
+
+-- New round: clear the win so the exit re-arms (processPlayer reads GameState).
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	for _, player in Players:GetPlayers() do
+		atLockedDoor[player] = nil
+		player:SetAttribute(Attributes.GameState, Enums.GameState.Playing)
+	end
 end)
 
 -- Per-player exit check, factored out so it can be pcall-isolated: a throw on one

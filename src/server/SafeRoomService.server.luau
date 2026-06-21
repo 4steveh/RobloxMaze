@@ -17,6 +17,7 @@ local Spatial = require(ReplicatedStorage.Spatial)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 Remotes.init()
 local enteredRemote = Remotes.get(Remotes.Names.SafeRoomEntered)
@@ -41,6 +42,19 @@ for _, player in Players:GetPlayers() do
 end
 Players.PlayerRemoving:Connect(function(player)
 	insideLast[player] = nil
+end)
+
+-- New round: forget safe-room state and clear checkpoints so everyone restarts at the
+-- PlayerStart (a fresh run), not their last safe room.
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	for _, player in Players:GetPlayers() do
+		if insideLast[player] then
+			leftRemote:FireClient(player) -- so the client clears safe-room reverb/recharge belief
+		end
+		insideLast[player] = false
+		player:SetAttribute(Attributes.InSafeRoom, false)
+		player:SetAttribute(Attributes.Checkpoint, nil)
+	end
 end)
 
 -- Per-player occupancy/transition check, factored out so it can be pcall-isolated:
