@@ -38,18 +38,24 @@ local function setAttrs(player, downed, progress)
 	player:SetAttribute(Attributes.ReviveProgress, progress)
 end
 
--- Collapse + immobilize. WalkSpeed/Jump are zeroed (SprintService also skips downed players,
--- so it never fights this) and PlatformStand ragdolls the body so teammates SEE who is down.
+-- Immobilize by ANCHORING the root, NOT PlatformStand. PlatformStand ragdolls the body:
+-- it drops the HRP ~2 studs and can clip through the floor, which players read as "fell
+-- through the map" (black screen) while being unable to move. Anchoring freezes the
+-- character exactly in place, upright, with no physics, so it can never clip or fall.
+-- WalkSpeed/Jump are also zeroed (SprintService skips downed players, so it never fights this).
 local function down(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not (humanoid and humanoid.Health > 0) then
 		return
 	end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
 	downedState[player] = { progress = 0, jumpPower = humanoid.JumpPower, jumpHeight = humanoid.JumpHeight }
 	setAttrs(player, true, 0)
 	player:SetAttribute(Attributes.DownedUntil, Workspace:GetServerTimeNow() + D.BleedoutSeconds)
-	humanoid.PlatformStand = true
+	if hrp then
+		hrp.Anchored = true
+	end
 	humanoid.WalkSpeed = 0
 	humanoid.JumpPower = 0
 	humanoid.JumpHeight = 0
@@ -98,8 +104,11 @@ local function revive(player)
 	local st = downedState[player]
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		hrp.Anchored = false
+	end
 	if humanoid then
-		humanoid.PlatformStand = false
 		humanoid.WalkSpeed = Config.Player.WalkSpeed -- SprintService resumes ownership next frame
 		if st then
 			humanoid.JumpPower = st.jumpPower
@@ -128,8 +137,11 @@ local function bleedout(player)
 	downedState[player] = nil
 	setAttrs(player, false, 0)
 	player:SetAttribute(Attributes.DownedUntil, nil)
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		hrp.Anchored = false -- unanchor so the death + respawn isn't frozen in place
+	end
 	if humanoid then
-		humanoid.PlatformStand = false
 		humanoid.Health = 0
 	end
 end
@@ -179,6 +191,12 @@ while true do
 			local character = player.Character
 			local hrp = character and character:FindFirstChild("HumanoidRootPart")
 			if not hrp then
+				-- Body gone while downed (shouldn't happen now we anchor instead of ragdoll, but
+				-- NEVER leave a player stuck-downed): clear the flag so they recover. SpawnService
+				-- respawns the character; its CharacterAdded handler re-cleans this anyway.
+				downedState[player] = nil
+				setAttrs(player, false, 0)
+				player:SetAttribute(Attributes.DownedUntil, nil)
 				return
 			end
 			local deadline = player:GetAttribute(Attributes.DownedUntil)

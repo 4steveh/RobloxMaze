@@ -6,6 +6,7 @@
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -23,23 +24,22 @@ local function send(isHeld)
 	sprintIntent:FireServer(isHeld)
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-	if input.KeyCode == sprintKey then
+-- Sprint via ContextActionService: createTouchButton makes a hold-to-sprint "Run" button on
+-- touch devices (iPad/iPhone), while the keyboard SprintKey still works on PC -- one handler.
+-- Begin -> sprinting; End/Cancel (key release, button lift, OR focus steal) -> released.
+local SPRINT_ACTION = "Sprint"
+ContextActionService:BindAction(SPRINT_ACTION, function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
 		send(true)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	-- Release always counts (even if the press was gameProcessed) so we never stick on.
-	if input.KeyCode == sprintKey then
+	elseif inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 		send(false)
 	end
-end)
+	return Enum.ContextActionResult.Sink
+end, true, sprintKey)
+ContextActionService:SetTitle(SPRINT_ACTION, "Run")
+ContextActionService:SetPosition(SPRINT_ACTION, UDim2.new(1, -150, 0.6, 0))
 
--- Alt-tab / focus loss does NOT fire InputEnded for a held key, which would otherwise
+-- Alt-tab / focus loss does NOT fire a release for a held key, which would otherwise
 -- leave the server believing sprint is held. Release explicitly on focus loss.
 UserInputService.WindowFocusReleased:Connect(function()
 	send(false)
