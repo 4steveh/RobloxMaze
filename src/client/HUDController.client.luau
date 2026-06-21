@@ -238,6 +238,7 @@ end)
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
 local exitLockedRemote = Remotes.get(Remotes.Names.ExitLocked)
+local exitOpenedRemote = Remotes.get(Remotes.Names.ExitOpened)
 
 -- Pip count syncs from the server-authoritative KeyCount attribute, so it is correct on
 -- pickup AND on a round reset to 0 (the remote below only drives the chime/toast juice).
@@ -257,6 +258,20 @@ end)
 
 gameWonRemote.OnClientEvent:Connect(function()
 	winOverlay.Visible = true
+end)
+
+-- A teammate reached the exit (shared round): the escapee gets the win overlay above;
+-- everyone else sees WHO got out, so the round reset reads as their escape, not a yank.
+-- Matched by name (not GameState) since the remotes and the attribute replicate together.
+exitOpenedRemote.OnClientEvent:Connect(function(escapeeName)
+	if escapeeName == player.Name then
+		return
+	end
+	showToast(
+		string.format("%s %s", escapeeName or "Someone", Config.Feedback.EscapedSuffix),
+		Config.Feedback.EscapedColor,
+		Config.Feedback.EscapedToastSeconds
+	)
 end)
 
 -- A new round (GameState back to Playing) hides the win overlay.

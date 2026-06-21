@@ -159,10 +159,16 @@ end
 
 local scareToken = 0
 
-caughtRemote.OnClientEvent:Connect(function()
+-- Payload `downed`: true = grabbed into the revivable DOWNED state (the DownedController
+-- HUD takes over — show only a SHORT scare, no "CAUGHT!"/countdown); false/nil = killed
+-- (the classic CAUGHT headline + respawn countdown).
+caughtRemote.OnClientEvent:Connect(function(downed)
 	scareToken += 1
 	local mine = scareToken
-	local total = Config.Respawn.RespawnDelay
+	local killed = not downed
+	-- How long the scare holds the screen: the full respawn window if killed, a short
+	-- punch if downed (so the bleedout/revive HUD is readable underneath).
+	local total = if killed then Config.Respawn.RespawnDelay else 1.3
 
 	-- Audio: scream over a hard duck of every bed.
 	scream:Play()
@@ -174,8 +180,8 @@ caughtRemote.OnClientEvent:Connect(function()
 	viewport.Visible = hasFace
 	flash.Visible = true
 	flash.BackgroundTransparency = 0.05
-	caughtLabel.Visible = true
-	countdownLabel.Visible = true
+	caughtLabel.Visible = killed
+	countdownLabel.Visible = killed
 
 	-- Flash punch out fast (reveals the face).
 	TweenService:Create(flash, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
@@ -200,11 +206,14 @@ caughtRemote.OnClientEvent:Connect(function()
 		end
 	end)
 
-	-- Countdown over the respawn window, then clear.
+	-- Hold for the window (killed: a respawn countdown; downed: a short scare hold), then clear
+	-- so the DownedController bleedout/revive HUD is readable underneath.
 	task.spawn(function()
 		local remaining = total
 		while remaining > 0 and mine == scareToken do
-			countdownLabel.Text = string.format("Respawning in %.0f...", math.ceil(remaining))
+			if killed then
+				countdownLabel.Text = string.format("Respawning in %.0f...", math.ceil(remaining))
+			end
 			task.wait(0.1)
 			remaining -= 0.1
 		end

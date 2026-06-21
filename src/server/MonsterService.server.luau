@@ -34,8 +34,10 @@ monstersFolder.Name = WorldFolders.Monsters
 monstersFolder.Parent = Workspace
 
 Remotes.init()
-local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
+-- A catch hands the OUTCOME to DownedService (down vs kill) via this signal; MonsterService
+-- stays out of player-life logic (it only repels its rig home so it never camps the body).
+local playerCaughtSignal = ServerSignals.get(ServerSignals.Names.PlayerCaught)
 
 -- Resolve a species' Config slice: the Shared cross-species plumbing overlaid with
 -- the species' own behaviour/rig fields (the species wins on any overlap). This is
@@ -126,6 +128,11 @@ local function sensePlayers(rig: Model, cfg, rangeMul: number, params: RaycastPa
 		-- Respawn invulnerability: a freshly (re)spawned player is invisible to every
 		-- monster for Config.Respawn.InvulnSeconds (the root anti-spawn-camp guard).
 		if player:GetAttribute(Attributes.RespawnGrace) == true then
+			continue
+		end
+		-- A DOWNED player is already caught — the monster moves on (no camping the body),
+		-- so it can't instantly re-grab them at zero or interrupt a revive.
+		if player:GetAttribute(Attributes.Downed) == true then
 			continue
 		end
 		local hrp = PlayerUtil.livingRootPart(player)
@@ -314,13 +321,16 @@ local function repelHome(inst)
 end
 
 local function catch(inst, player: Player)
+	if player:GetAttribute(Attributes.Downed) == true then
+		return -- already down; don't re-trigger the outcome
+	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not (humanoid and humanoid.Health > 0) then
 		return
 	end
-	humanoid.Health = 0
-	caughtRemote:FireClient(player)
+	-- Hand the outcome to DownedService (down vs kill); MonsterService doesn't own player life.
+	playerCaughtSignal:Fire(player)
 
 	if inst.cfg.ResetToPatrolOnCatch then
 		repelHome(inst)

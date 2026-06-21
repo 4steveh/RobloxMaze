@@ -26,6 +26,7 @@ end
 local keyChime = stinger(ST.KeyChimeId, ST.KeyChimeVolume, "UI")
 local lockedThunk = stinger(ST.LockedThunkId, ST.LockedThunkVolume, "SFX")
 local winJingle = stinger(ST.WinJingleId, ST.WinJingleVolume, "Music")
+local exitHeave = stinger(Config.Exit.OpenSoundId, Config.Exit.OpenSoundVolume, "SFX") -- the gate sliding open
 
 Remotes.get(Remotes.Names.KeyCollected).OnClientEvent:Connect(function()
 	keyChime:Play()
@@ -33,6 +34,11 @@ end)
 
 Remotes.get(Remotes.Names.ExitLocked).OnClientEvent:Connect(function()
 	lockedThunk:Play()
+end)
+
+-- The exit gate heaving open (heard by the whole lobby when anyone escapes).
+Remotes.get(Remotes.Names.ExitOpened).OnClientEvent:Connect(function()
+	exitHeave:Play()
 end)
 
 Remotes.get(Remotes.Names.GameWon).OnClientEvent:Connect(function()

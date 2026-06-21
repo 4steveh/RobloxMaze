@@ -64,7 +64,11 @@ Config.KeyModel = table.freeze({
 Config.Spatial = table.freeze({
 	PollInterval = 0.15, -- seconds between server occupancy/proximity scans
 	KeyPickupRadius = 6, -- studs: distance to a KeySpot that counts as a pickup
-	ExitTriggerRadius = 8, -- studs: distance to an ExitDoor that counts as reaching it
+	-- Distance to the ExitDoor that counts as "reaching" it. Measured to the door's
+	-- closest SURFACE point (Spatial.distanceToPart), NOT its centre -- so a player
+	-- pressed against the gate always triggers even if the door part is large/thick
+	-- (the old centre-distance check left the win just out of reach behind the gate).
+	ExitTriggerRadius = 9, -- studs from the door surface
 })
 
 -- Respawn -----------------------------------------------------------------------
@@ -79,6 +83,60 @@ Config.Respawn = table.freeze({
 -- Win ---------------------------------------------------------------------------
 Config.Win = table.freeze({
 	FreezeDuration = 3, -- seconds the player is frozen during the win celebration
+})
+
+-- Downed & revive (co-op: a catch becomes a RESCUE, not an instant respawn) -------
+-- When a monster catches a player AND a teammate could possibly save them, they go
+-- DOWNED — collapsed + immobilized + bleeding out — instead of dying. Any living
+-- teammate who STAYS within ReviveRadius for ReviveSeconds revives them (spatial +
+-- server-authoritative, no client input — the SafeRoom-occupancy pattern). Bleed out
+-- with no rescue → the normal checkpoint respawn. SOLO, or a full wipe (no possible
+-- rescuer), skips straight to that respawn — so single-player is UNCHANGED. The monster
+-- ignores a downed player (it moves on; no camping the body — the anti-spawn-camp ethos).
+Config.Downed = table.freeze({
+	Enabled = true,
+	BleedoutSeconds = 25, -- seconds downed before you die/respawn if no one reaches you
+	ReviveRadius = 7, -- studs a living teammate must be within to revive you
+	ReviveSeconds = 3.5, -- seconds of a teammate staying close to complete the revive
+	ReviveDecayScale = 1.5, -- revive progress drains at this × the fill rate when no rescuer is near
+	ReviveGraceSeconds = 3, -- seconds of monster-ignore invulnerability right after a revive
+
+	-- Downed/revive HUD (DownedController; render-only) ---------------------------
+	OverlayColor = Color3.fromRGB(45, 0, 0), -- the downed-screen wash
+	OverlayTransparency = 0.4,
+	DownedText = "DOWNED",
+	DownedSubText = "stay near a teammate to be revived",
+	BleedoutBarColor = Color3.fromRGB(225, 60, 55), -- the shrinking time-left bar
+	ReviveBarColor = Color3.fromRGB(120, 230, 130), -- the filling revive bar
+	BarWidth = 280, -- px width of the downed-screen bars
+	BarHeight = 14, -- px
+	-- Revive beacon shown over a downed TEAMMATE (so others find + save you).
+	BeaconText = "REVIVE",
+	BeaconColor = Color3.fromRGB(120, 230, 130),
+	BeaconHeight = 4.5, -- studs above the downed player's head
+	BeaconWidth = 170, -- px width of the billboard
+	BeaconHeightPx = 52, -- px height of the billboard
+})
+
+-- Exit gate (the maze's payoff: a real door that LOCKS until the keys are in) ------
+-- The ExitDoor tag is the trigger VOLUME; the ExitGate tag is the SOLID part(s) that
+-- physically block the corridor. ExitService keeps the gate shut + visibly LOCKED
+-- (red indicator) until the team holds RequiredToWin keys (indicator -> green), then
+-- slides it open when a player reaches it -- so escaping is a felt event, not a silent
+-- attribute flip against a wall. The gate re-closes/re-locks on a round reset.
+Config.Exit = table.freeze({
+	OpenLiftStuds = 15, -- studs the gate slides UP (into the ceiling) when it opens -- clears a 14-tall doorway
+	OpenSeconds = 1.1, -- seconds the open slide takes (a heavy door heave)
+	-- Lock indicator: a PointLight ExitService parents to each gate. Red = locked,
+	-- green = the team has every key (the door is now openable). It reads in the dark
+	-- so players can SEE the exit state from down the corridor.
+	IndicatorRange = 14, -- studs the indicator light reaches
+	IndicatorBrightness = 2.2,
+	LockedColor = Color3.fromRGB(220, 40, 40), -- red: not enough keys yet
+	UnlockedColor = Color3.fromRGB(90, 230, 110), -- green: all keys in -- go!
+	-- Door SFX (reuse a verified free Creator-Store id: the heavy thunk doubles as a heave).
+	OpenSoundId = "rbxassetid://9120188626",
+	OpenSoundVolume = 0.85,
 })
 
 -- Round loop --------------------------------------------------------------------
@@ -460,6 +518,13 @@ Config.Player = table.freeze({
 	StaminaRegenDelay = 0.6, -- seconds after sprinting before stamina starts to regen
 	SprintKey = Enum.KeyCode.LeftShift,
 	IntentRateLimit = 0.08, -- min seconds between accepted SprintIntent messages (anti-spam)
+
+	-- Sprint FOV kick (CLIENT cosmetic only -- SprintFXController). The camera FOV widens
+	-- as you actually sprint, the chase-juice staple that makes a server-authoritative
+	-- sprint FEEL immediate and fast (it reads real ground speed, so it never lies when
+	-- you're out of stamina or wedged on a wall). Uncontested + render-only (CLAUDE.md OK).
+	SprintFovKick = 12, -- degrees added to the base FOV at full sprint speed
+	SprintFovSmoothing = 8, -- per-second lerp rate the FOV eases toward its target (snappy but not jarring)
 })
 
 -- Compass: key-finding wayfinding (the fix for "no clear direction") --------------
@@ -487,6 +552,13 @@ Config.Onboarding = table.freeze({
 	ControlsHintSeconds = 9, -- how long the controls hint shows (or until first move)
 	ObjectiveLabel = "KEYS", -- "KEYS 0/3"
 	ObjectiveExitText = "ALL KEYS — REACH THE EXIT", -- objective tracker once keys are done
+
+	-- Just-in-time tips (TutorialController): each shown ONCE, the first time you actually
+	-- face that threat, so the COUNTER is taught in the moment rather than in an up-front wall
+	-- of text (Roblox's own FTUE guidance). Driven by the MonsterStateChanged remote.
+	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
+	AlertTip = "It HEARD you — slow down and move quietly",
+	TipSeconds = 5, -- how long a tip holds before fading
 })
 
 -- Feedback: legible event messaging (toasts + win/caught copy) --------------------
@@ -497,6 +569,11 @@ Config.Feedback = table.freeze({
 	CaughtText = "CAUGHT!",
 	CaughtColor = Color3.fromRGB(220, 60, 55),
 	LockedTextPrefix = "EXIT LOCKED", -- shown with the live count: "EXIT LOCKED — 3 KEYS NEEDED"
+	-- Shown to OTHER players (not the escapee) when someone reaches the exit and the shared
+	-- round is about to reset -- so a co-op escape reads as an event, not a silent yank.
+	EscapedSuffix = "ESCAPED!", -- composed with the escapee's name: "Steve ESCAPED!"
+	EscapedColor = Color3.fromRGB(120, 230, 130),
+	EscapedToastSeconds = 3.0,
 })
 
 -- Chase FX: the hunt as a visual event ------------------------------------------

@@ -2,9 +2,15 @@
 -- KeyService.server.luau
 -- Spawns the round's collectible keys at a random subset of KeySpot markers
 -- (the per-round variety mechanic), and detects pickups server-authoritatively by
--- spatial check -- never Touched (see CLAUDE.md). Each player's key count is kept
--- on the server so it survives death/respawn, and exposed via the KeyCount
--- attribute for other server systems (ExitService) and the HUD.
+-- spatial check -- never Touched (see CLAUDE.md).
+--
+-- Keys are a SHARED TEAM objective (co-op, like Flee the Facility's computers): any
+-- player picking up a key advances ONE team count, mirrored to every player's KeyCount
+-- attribute, so the whole lobby can reach RequiredToWin and escape. (Per-player counts
+-- with a fixed shared key pool locked everyone but one player out in multiplayer.)
+-- Splitting up to gather keys faster is the co-op play; the team count survives any one
+-- player's death/respawn and is exposed via KeyCount for ExitService, the HUD, and the
+-- aggression ramp.
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -26,7 +32,7 @@ local ServerSignals = require(script.Parent.ServerSignals)
 Remotes.init()
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 
-local keyCounts = {} -- [player] = number (survives respawn; not tied to the character)
+local teamKeyCount = 0 -- ONE shared count for the whole lobby (survives any player's respawn)
 local liveKeys = {} -- array of currently-collectible key parts
 local rng = Random.new()
 
@@ -136,21 +142,23 @@ local function spawnRoundKeys()
 	end
 end
 
-local function setCount(player, count)
-	keyCounts[player] = count
-	player:SetAttribute(Attributes.KeyCount, count)
+-- Mirror the shared team count onto every player's KeyCount attribute (HUD, ExitService,
+-- aggression ramp all read it). Called on every pickup and on a round reset.
+local function setTeamCount(count)
+	teamKeyCount = count
+	for _, player in Players:GetPlayers() do
+		player:SetAttribute(Attributes.KeyCount, count)
+	end
 end
 
+-- A joiner (or rejoiner) syncs to the team's current progress, never to 0 mid-round.
 local function onPlayerAdded(player)
-	setCount(player, keyCounts[player] or 0)
+	player:SetAttribute(Attributes.KeyCount, teamKeyCount)
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
 end
-Players.PlayerRemoving:Connect(function(player)
-	keyCounts[player] = nil
-end)
 
 spawnRoundKeys()
 
@@ -167,9 +175,7 @@ end
 
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	clearKeys()
-	for _, player in Players:GetPlayers() do
-		setCount(player, 0)
-	end
+	setTeamCount(0)
 	spawnRoundKeys()
 end)
 
@@ -189,8 +195,12 @@ local function processPlayerPickups(player)
 		elseif Spatial.withinRange(rootPart.Position, key.Position, Config.Spatial.KeyPickupRadius) then
 			table.remove(liveKeys, index) -- claim it before doing anything else
 			key:Destroy()
-			setCount(player, (keyCounts[player] or 0) + 1)
-			keyCollectedRemote:FireClient(player, keyCounts[player])
+			-- Advances the shared team count; tell EVERY player (their HUD pip fills, the chime
+			-- + "KEY n/3" toast fires) so the lobby sees co-op progress, not just the finder.
+			setTeamCount(teamKeyCount + 1)
+			for _, p in Players:GetPlayers() do
+				keyCollectedRemote:FireClient(p, teamKeyCount)
+			end
 		end
 	end
 end
