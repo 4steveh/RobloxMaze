@@ -544,6 +544,12 @@ Config.Audio = table.freeze({
 		MusicBoxMaxGap = 110,
 		MusicBoxPlaySeconds = 14, -- seconds of the (long) music-box clip to play per drift-in
 		MusicBoxRange = 75, -- studs RollOffMaxDistance for the 3D music box
+		-- Dread ramp: each drift-in starts at a random point in the (long) clip, with a slight
+		-- detune wobble (a haunted, winding-down box) and a fade-out instead of a hard stop.
+		MusicBoxStartRange = 30, -- max random TimePosition (s) the clip starts from
+		MusicBoxPitchWobble = 0.06, -- +/- PlaybackSpeed wobble (a detuning music box)
+		MusicBoxWobbleHz = 0.4, -- Hz of the detune wobble
+		MusicBoxFadeSeconds = 1.5, -- fade-out time when a drift-in ends (vs an abrupt Stop)
 	}),
 
 	-- Monster cues: 3D breathing/footsteps on the rig + a non-spatial heartbeat the
@@ -564,6 +570,40 @@ Config.Audio = table.freeze({
 		HeartbeatMaxDistance = 8, -- studs at which it is loudest/fastest
 		HeartbeatMinRate = 0.75, -- PlaybackSpeed at start distance
 		HeartbeatMaxRate = 1.9, -- PlaybackSpeed at closest
+		-- The heartbeat is gated by the nearest rig's STATE (see MonsterAudioController): it
+		-- ramps full only when a monster is HUNTING you (Chase/Investigate), softer when it
+		-- merely heard you (Alert, scaled by Config.Chase.AlertScale), and stays silent for a
+		-- patrolling/searching monster UNLESS it is right on top of you (this panic radius) --
+		-- so the heartbeat MEANS "it is hunting you", not "a monster exists somewhere".
+		HeartbeatPanicRadius = 10, -- studs: a non-hunting rig within this still spikes the pulse
+
+		-- Per-species voice: same verified clips, but pitched/levelled so the two monsters
+		-- sound distinct by ear (the bunny lighter + higher, the monkey heavier + lower).
+		SpeciesMix = table.freeze({
+			Bunny = table.freeze({ Pitch = 1.12, VolumeScale = 0.9 }),
+			Monkey = table.freeze({ Pitch = 0.82, VolumeScale = 1.12 }),
+		}),
+
+		-- Wall occlusion: a rig behind geometry is muffled (low-pass) and quieter, so "it's
+		-- close but WHERE" tension returns. One throttled ray (player -> rig) decides LoS.
+		Occlusion = table.freeze({
+			Interval = 0.2, -- seconds between occlusion raycasts per rig (throttled)
+			VolumeScale = 0.45, -- volume multiplier while occluded
+			HighGain = -26, -- EqualizerSoundEffect HighGain (dB) while occluded (muffled highs)
+			MidGain = -9, -- ...mid attenuation
+			LowGain = 0, -- lows pass (a dull thud through the wall)
+		}),
+	}),
+
+	-- Adaptive TENSION bed on the Music bus: silent when safe, swelling as a monster HUNTS
+	-- you (driven by the same replicated rig State + distance the heartbeat reads), so the
+	-- score builds with the threat. Reuses the verified dread-drone asset, pitched low.
+	-- (Crossfaded by MonsterAudioController; the win jingle is the only other Music cue.)
+	Music = table.freeze({
+		TensionId = "rbxassetid://140704980462451", -- the dread drone, pitched down into a tension layer
+		TensionMaxVolume = 0.55, -- volume at full threat
+		TensionPitch = 0.7, -- pitched down for dread
+		FadeRate = 2.5, -- per-second lerp of the tension volume toward the threat target
 	}),
 
 	-- Player SFX (footsteps, flashlight click, low-battery beep). All uncontested.
@@ -580,6 +620,17 @@ Config.Audio = table.freeze({
 		FlashlightClickVolume = 0.5,
 		LowBatteryBeepId = "rbxassetid://8500212950",
 		LowBatteryBeepVolume = 0.45,
+		-- The low-battery beep QUICKENS as the battery empties (an audible countdown to dark),
+		-- then sounds once pitched-down when it hits zero (the light "dies"). Reuses the beep id.
+		LowBatteryBeepMaxInterval = 2.2, -- seconds between beeps at the low-battery threshold
+		LowBatteryBeepMinInterval = 0.45, -- ...shrinking to this as the battery nears empty
+		LightDiesPitch = 0.6, -- PlaybackSpeed of the final beep when the battery reaches zero
+		-- Footstep loudness tracks the movement TIER, so your ears confirm the NoiseMeter:
+		-- sprinting is loud, walking normal, creeping near-silent.
+		FootstepCreepSpeed = 6, -- studs/s below which steps are near-silent
+		FootstepSprintSpeed = 22, -- studs/s at/above which steps are loudest
+		FootstepCreepVolumeScale = 0.35, -- volume multiplier while creeping
+		FootstepSprintVolumeScale = 1.6, -- volume multiplier while sprinting
 	}),
 
 	-- One-shot event stingers wired to the EXISTING remotes.
