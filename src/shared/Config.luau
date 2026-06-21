@@ -610,6 +610,32 @@ Config.TouchControls = table.freeze({
 	SprintIconImage = "", -- TODO: a run icon asset id
 })
 
+-- Monster radar (so you can tell where the monsters are) -------------------------
+-- A compact camera-relative radar (top-right): the player at center, a blip per monster
+-- placed by bearing + clamped distance, colored by threat (hunting = alarming red, just
+-- patrolling = dim). Reads each rig's replicated HRP + State (exploit-safe; no server trust).
+-- Render-only -- the FlickerController-class client cosmetic.
+Config.Radar = table.freeze({
+	Size = 156, -- px diameter of the radar disc
+	Margin = 20, -- px from the top-right corner
+	Range = 130, -- studs: a monster at/beyond this sits on the radar's edge
+	BackgroundColor = Color3.fromRGB(10, 12, 16),
+	BackgroundTransparency = 0.35,
+	RingColor = Color3.fromRGB(70, 80, 95),
+	PlayerColor = Color3.fromRGB(150, 220, 255), -- the center dot (you)
+	BlipSize = 16, -- px (a hunting monster's blip; patrolling ones are drawn smaller)
+	-- Blips are tinted by SPECIES (mirroring each monster's eye-glow tell) so you can tell the
+	-- two apart, and made prominent by THREAT: a hunting monster is bright + full size, a
+	-- patrolling one is dim + small (visible so you can avoid it, but clearly less urgent).
+	BunnyBlipColor = Color3.fromRGB(210, 40, 40), -- the vision stalker (red eyes)
+	MonkeyBlipColor = Color3.fromRGB(250, 210, 60), -- the noise hunter (yellow eyes)
+	UnknownBlipColor = Color3.fromRGB(200, 200, 200),
+	HuntingTransparency = 0, -- a hunting monster's blip (Chase/Investigate/Alert)
+	IdleTransparency = 0.55, -- a patrolling/searching monster's blip (faint)
+	IdleSizeScale = 0.7, -- patrolling blips are this fraction of BlipSize
+	Label = "RADAR",
+})
+
 -- Feedback: legible event messaging (toasts + win/caught copy) --------------------
 Config.Feedback = table.freeze({
 	KeyToastSeconds = 2.0, -- "KEY 1/3" toast hold time

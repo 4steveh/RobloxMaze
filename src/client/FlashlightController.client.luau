@@ -35,17 +35,24 @@ local flickerPhase = 0
 -- Publish the on/off state so PlayerSFXController can play the toggle click (local).
 player:SetAttribute(Attributes.FlashlightOn, lightOn)
 
-local function setupLight(character)
-	local head = character:WaitForChild("Head", 10)
+-- Idempotent, SELF-HEALING light builder -- safe to call every frame. It (re)builds the
+-- emitter + SpotLight only when they're missing/detached and the Head exists. This is the
+-- watchdog that fixes "the flashlight sometimes doesn't work": the old one-shot rebuild used
+-- WaitForChild and a stale-character guard that, on a fast death->respawn race, could leave
+-- light/emitter permanently nil until the NEXT respawn. Now a lost race recovers next frame.
+local function ensureLight(character)
+	if not character or player.Character ~= character then
+		return -- never attach to a stale / dead body
+	end
+	-- Already valid for THIS character? Nothing to do.
+	if light and light.Parent and emitter and emitter.Parent == character then
+		return
+	end
+	local head = character:FindFirstChild("Head")
 	if not head then
-		return
+		return -- head hasn't streamed in yet; retry next frame
 	end
-	-- A faster respawn may have swapped in a new character while we yielded on
-	-- WaitForChild above; bail so this stale call can't clobber the live light.
-	if player.Character ~= character then
-		return
-	end
-	-- Clean any prior emitter (a fast respawn can leave one behind).
+	-- Clean any stale emitter, then build fresh.
 	local prior = character:FindFirstChild("FlashlightEmitter")
 	if prior then
 		prior:Destroy()
@@ -120,7 +127,7 @@ local function onCharacterAdded(character)
 	-- New body: forget the old safe-room belief (the server re-fires "entered" if
 	-- we spawned inside one) and rebuild the light. Battery persists across deaths.
 	inSafeRoom = false
-	setupLight(character)
+	ensureLight(character)
 end
 
 if player.Character then
@@ -208,6 +215,12 @@ leftRemote.OnClientEvent:Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function(deltaTime)
+	-- Watchdog: (re)build the light if it's missing (e.g. a death->respawn race dropped it),
+	-- so the flashlight self-heals within a frame instead of staying dark until the next spawn.
+	if player.Character then
+		ensureLight(player.Character)
+	end
+
 	-- Aim: keep the emitter at the head but rotate it toward the CAMERA look (smoothed),
 	-- so the beam follows where you point -- including up/down -- not where the torso faces.
 	if emitter then
@@ -236,9 +249,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		battery = math.min(Config.Flashlight.BatteryMax, battery + Config.Flashlight.IdleRechargePerSecond * deltaTime)
 	end
 
-	-- Light output: dark at empty battery; subtle flicker when low.
+	-- Light output: ON whenever toggled on (never fully off); dims + flickers as battery runs low.
 	if light then
-		local emitting = lightOn and battery > 0
+		local emitting = lightOn -- NEVER fully off: a drained battery only DIMS it (the low-battery flicker floors brightness), never darkness, so the flashlight always works
 		light.Enabled = emitting
 		if emitting then
 			local brightness = Config.Flashlight.Brightness
