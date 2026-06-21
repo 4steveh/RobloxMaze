@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
 local player = Players.LocalPlayer
@@ -89,7 +90,7 @@ scream.SoundGroup = AudioGroups.get("Master")
 scream.Parent = SoundService
 
 local function findMonsterRig()
-	local monsters = Workspace:FindFirstChild("Monsters")
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
 	if not monsters then
 		return nil
 	end

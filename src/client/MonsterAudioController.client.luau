@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Enums = require(ReplicatedStorage.Enums)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
 local MA = Config.Audio.Monster
@@ -90,7 +91,7 @@ local function removeRig(rig)
 	end
 end
 
-local monstersFolder = Workspace:WaitForChild("Monsters")
+local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
 for _, rig in monstersFolder:GetChildren() do
 	addRig(rig)
 end

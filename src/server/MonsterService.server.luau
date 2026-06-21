@@ -19,16 +19,17 @@ local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local Enums = require(ReplicatedStorage.Enums)
 local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 local Remotes = require(ReplicatedStorage.Remotes)
 local BunnyFSM = require(script.Parent.BunnyFSM)
 local MonkeyFSM = require(script.Parent.MonkeyFSM)
 local MonsterRig = require(script.Parent.MonsterRig)
 
-local STATE_ATTRIBUTE = "State" -- on the rig model: current Enums.MonsterState (observability/testing)
+local STATE_ATTRIBUTE = Attributes.MonsterState -- on the rig model: current Enums.MonsterState
 
 local monstersFolder = Instance.new("Folder")
-monstersFolder.Name = "Monsters"
+monstersFolder.Name = WorldFolders.Monsters
 monstersFolder.Parent = Workspace
 
 Remotes.init()

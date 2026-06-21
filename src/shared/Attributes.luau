@@ -45,6 +45,13 @@ local Attributes = {
 	-- MonsterAnimController (to pick the gait recipe) and per-type monster audio.
 	MonsterSpecies = "Species",
 
+	-- string on a MONSTER RIG (not a Player): the rig's current Enums.MonsterState
+	-- ("Patrol"/"Chase"/...). Server-authoritative (written by MonsterService each tick);
+	-- read by the client MonsterAnimController (gait blend), MonsterAudioController
+	-- (heartbeat/sting), ChaseFXController (the grade), and the adaptive audio. The same
+	-- producer/consumer discipline MonsterSpecies follows -- one constant, no literals.
+	MonsterState = "State",
+
 	-- number on a Player (0..1): server-computed audible NOISE this player is making
 	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
 	-- NoiseService (never client-set), read by the monkey's hearing detection and the

@@ -18,8 +18,9 @@ local Config = require(ReplicatedStorage.Config)
 local Enums = require(ReplicatedStorage.Enums)
 local Gaits = require(ReplicatedStorage.Gaits)
 local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
-local STATE_ATTRIBUTE = "State" -- matches the rig attribute MonsterService writes
+local STATE_ATTRIBUTE = Attributes.MonsterState -- matches the rig attribute MonsterService writes
 
 -- [rig] = { root, joints = { [Part1Name] = Motor6D }, species, lastPos, speed, phase, moveW, chaseW }
 local rigs = {}
@@ -74,7 +75,7 @@ local function removeRig(rig)
 	rigs[rig] = nil
 end
 
-local monstersFolder = Workspace:WaitForChild("Monsters")
+local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
 for _, rig in monstersFolder:GetChildren() do
 	addRig(rig)
 end

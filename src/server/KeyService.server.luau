@@ -20,6 +20,7 @@ local Spatial = require(ReplicatedStorage.Spatial)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 Remotes.init()
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
@@ -29,7 +30,7 @@ local liveKeys = {} -- array of currently-collectible key parts
 local rng = Random.new()
 
 local keysFolder = Instance.new("Folder")
-keysFolder.Name = "Keys"
+keysFolder.Name = WorldFolders.Keys
 keysFolder.Parent = Workspace
 
 local function makeKey(position)

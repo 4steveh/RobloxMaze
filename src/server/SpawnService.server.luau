@@ -20,6 +20,7 @@ local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 -- We own WHEN characters load, not just WHERE they go: no engine auto-respawn.
 Players.CharacterAutoLoads = false
@@ -28,7 +29,7 @@ Players.CharacterAutoLoads = false
 -- under this folder. Per-player -- not one shared pad -- so concurrent respawns in
 -- future co-op never race over a single pad's position.
 local spawnsFolder = Instance.new("Folder")
-spawnsFolder.Name = "PlayerSpawns"
+spawnsFolder.Name = WorldFolders.PlayerSpawns
 spawnsFolder.Parent = Workspace
 
 local spawnLocations = {}

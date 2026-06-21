@@ -157,7 +157,8 @@ File-extension → instance-class rules (Rojo):
 | Module          | Purpose |
 | --------------- | ------- |
 | `Tags`          | Canonical CollectionService tag-name constants. The only place tag strings exist. |
-| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`, `RespawnGrace`, `Stamina`, `FlashlightOn`, `NoiseLevel`; per-rig `Species`) — the `Tags` discipline applied to attributes. |
+| `Attributes`    | Canonical Instance attribute-name constants (per-player `Checkpoint`, `InSafeRoom`, `KeyCount`, `GameState`, `FlashlightBattery`, `RespawnGrace`, `Stamina`, `FlashlightOn`, `NoiseLevel`; per-rig `Species`, `State`) — the `Tags` discipline applied to attributes. |
+| `WorldFolders`  | Canonical names of the runtime Workspace container folders (`Monsters`, `Keys`, `PlayerSpawns`) the server builds and the client reads — the `Tags`/`Attributes` discipline applied to the folders that cross the server→client boundary. |
 | `Config`        | Single source of truth for every tunable number (frozen sections). |
 | `Enums`         | Enum-like constant tables (`GameState`; `MonsterType.{Bunny,Monkey}`; `MonsterState.{Patrol,Chase,Search,Alert,Investigate}`). |
 | `Types`         | Shared Luau `export type` definitions. |

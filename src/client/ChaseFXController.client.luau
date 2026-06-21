@@ -15,9 +15,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Enums = require(ReplicatedStorage.Enums)
+local Attributes = require(ReplicatedStorage.Attributes)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 local C = Config.Chase
-local STATE = "State"
+local STATE = Attributes.MonsterState
 local player = Players.LocalPlayer
 
 -- Dedicated grade (composes over the place's static ColorGrading/ColorCorrection).
@@ -85,7 +87,7 @@ local current = 0
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local monsters = Workspace:FindFirstChild("Monsters")
+	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
 
 	local target = 0
 	local nearestAggro, nearestDist, nearestProx = nil, math.huge, 0
