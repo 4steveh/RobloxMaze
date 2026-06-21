@@ -27,6 +27,17 @@ Config.Flashlight = table.freeze({
 	Shadows = true, -- the flashlight casts dynamic shadows (monsters throw a shadow before you see them).
 	-- Requires Lighting.Technology = Future (or ShadowMap), which EnvironmentService sets on boot
 	-- (it IS script-writable, contrary to an earlier note here) -- so this works out of the box.
+
+	-- Camera-aligned aiming: the beam tracks where you LOOK (incl. pitch up/down), not
+	-- where the torso faces -- so the flashlight feels like an instrument you point.
+	AimSmoothing = 20, -- per-second lerp rate the beam rotates toward the camera look (snappy but weighty)
+
+	-- Monster-proximity flicker: a hunting monster nearby makes the beam stutter/dim --
+	-- a fear beat AND a tell that something is hunting you. Render-only (reads replicated
+	-- rig State + distance, exploit-safe). Set MonsterFlickerMaxScale = 0 to disable.
+	MonsterFlickerStartDistance = 40, -- studs: a hunter within this begins the stutter
+	MonsterFlickerMaxScale = 0.5, -- max fraction of brightness the stutter can subtract (0..1)
+	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
 })
 
 -- Keys --------------------------------------------------------------------------
