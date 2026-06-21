@@ -25,7 +25,8 @@ Config.Flashlight = table.freeze({
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
 	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
 	Shadows = true, -- the flashlight casts dynamic shadows (monsters throw a shadow before you see them).
-	-- NOTE: requires Lighting.Technology = ShadowMap or Future (a Studio Lighting property; can't be set from a script).
+	-- Requires Lighting.Technology = Future (or ShadowMap), which EnvironmentService sets on boot
+	-- (it IS script-writable, contrary to an earlier note here) -- so this works out of the box.
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -349,6 +350,65 @@ Config.Lighting = table.freeze({
 	FlickerMinScale = 0.35, -- brightness floor as a fraction of the fixture's base brightness
 	FlickerOffChance = 0.015, -- per-frame chance a fixture briefly cuts out entirely
 	FlickerOffTime = 0.12, -- seconds a fixture stays cut out
+})
+
+-- Environment / atmosphere (the mood foundation, reproduced FROM CODE) ------------
+-- The whole horror mood (lighting model, darkness, fog, post-FX, base grade) used to
+-- live only in unsaved Studio place content, so a fresh `rojo build` rendered flat,
+-- bright, and fogless and the flashlight/monster shadows silently no-op'd. This section
+-- + EnvironmentService rebuild it deterministically on boot: dark, foggy, contrasty,
+-- with real-time shadows on (so the flashlight throws a creature's shadow up the wall
+-- before you see it). Tune the dread here; nothing about it is in the place anymore.
+Config.Environment = table.freeze({
+	-- Core Lighting. Future tech is what makes the flashlight + monster shadows real
+	-- (it IS script-writable). ClockTime 0 = midnight; the practical flicker fixtures
+	-- and your flashlight are the only real light, which is the point.
+	Technology = Enum.Technology.Future,
+	ClockTime = 0, -- midnight
+	GeographicLatitude = 0,
+	Brightness = 1, -- sun/moon brightness (low: an interior at night)
+	ExposureCompensation = -0.15, -- pull the whole frame down a touch
+	Ambient = Color3.fromRGB(10, 10, 14), -- shadowed-area fill (very dark)
+	OutdoorAmbient = Color3.fromRGB(18, 18, 26), -- skylight fill (dark, faintly cold)
+	EnvironmentDiffuseScale = 0.25, -- low ambient bounce -> darkness has weight
+	EnvironmentSpecularScale = 0.25,
+	GlobalShadows = true,
+	ShadowSoftness = 0.5,
+
+	-- Atmosphere (the modern volumetric haze; supersedes legacy Fog under Future).
+	Atmosphere = table.freeze({
+		Density = 0.42, -- corridor haze: distant things dissolve into the dark
+		Offset = 0.1,
+		Color = Color3.fromRGB(150, 150, 162), -- cool grey air
+		Decay = Color3.fromRGB(70, 70, 85), -- the colour haze decays toward
+		Glare = 0.1,
+		Haze = 2.2, -- the milky "you can't see far" look
+	}),
+
+	-- Bloom: only genuinely bright things bleed (eye-glow, neon keys, flicker tubes),
+	-- so light sources read as menacing in the dark rather than washing the scene.
+	Bloom = table.freeze({
+		Intensity = 0.7,
+		Size = 24,
+		Threshold = 1.05,
+	}),
+
+	-- Depth of field: subtle cinematic fall-off so the far dark reads as depth.
+	DepthOfField = table.freeze({
+		FarIntensity = 0.12,
+		FocusDistance = 28,
+		InFocusRadius = 22,
+		NearIntensity = 0.1,
+	}),
+
+	-- Base colour grade (a SEPARATE ColorCorrection named "BaseGrade"; the client's
+	-- ChaseFX grade composes ON TOP of it, so the chase wash never corrupts this).
+	BaseGrade = table.freeze({
+		Brightness = -0.02,
+		Contrast = 0.14,
+		Saturation = -0.2, -- drained, sickly
+		TintColor = Color3.fromRGB(206, 212, 224), -- a cold cast
+	}),
 })
 
 -- Player movement: sprint + stamina ---------------------------------------------

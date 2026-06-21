@@ -34,6 +34,7 @@ local function cosmeticPart(name: string, size: Vector3, color: Color3): Part
 	p.CanQuery = false
 	p.CanTouch = false
 	p.Massless = true
+	p.CastShadow = true -- the creature throws a shadow up the corridor before you see it
 	return p
 end
 
@@ -57,6 +58,7 @@ local function buildMeshBody(rig: Model, root: BasePart, source: BasePart, cfg)
 	body.CanQuery = false
 	body.CanTouch = false
 	body.Massless = true
+	body.CastShadow = true
 	body.Parent = rig
 	joint(
 		"BodyJoint",
@@ -160,6 +162,7 @@ local function buildPartsRig(rig: Model, root: BasePart, cfg, partsModel: Model)
 			mp.CanQuery = false
 			mp.CanTouch = false
 			mp.Massless = true
+			mp.CastShadow = true -- real mesh limbs throw a shadow (Lighting.Technology = Future)
 			mp.Parent = rig
 		end
 	end
