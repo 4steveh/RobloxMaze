@@ -181,7 +181,10 @@ local function sensePlayers(rig: Model, cfg, rangeMul: number, params: RaycastPa
 		local noise = nil
 		if cfg.HearRange then
 			local level = player:GetAttribute(Attributes.NoiseLevel) or 0
-			noise = level * math.clamp(1 - distance / (cfg.HearRange * rangeMul), 0, 1)
+			-- Falloff shape: a power < 1 keeps a loud (sprinting) player audible across MORE of the maze
+			-- (less "deaf" monkey); linear if no power set. Walking stays below HearThreshold either way.
+			local falloff = math.clamp(1 - distance / (cfg.HearRange * rangeMul), 0, 1)
+			noise = level * (falloff ^ (cfg.HearFalloffPower or 1))
 		end
 
 		table.insert(result, { player = player, position = hrp.Position, visible = visible, noise = noise })
@@ -480,6 +483,7 @@ while true do
 				if stunnedHum then
 					stunnedHum.WalkSpeed = 0
 				end
+				inst.chaseStartClock = nil -- a trap stun ends the chase -> bloodlust resets (a real reprieve)
 				inst.mover.update(nil, dt)
 				return
 			end
@@ -547,7 +551,10 @@ while true do
 
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
 			if humanoid then
-				humanoid.WalkSpeed = result.speed * speedMul * (1 + bloodlust)
+				-- Clamp the ramped hunt speed at the species ceiling so Aggression x Bloodlust can't
+				-- stack the bunny past sprint (unwinnable) or the monkey lunge into a teleport. Patrol
+				-- speeds sit well below the cap, so it only ever binds during a hot chase.
+				humanoid.WalkSpeed = math.min(result.speed * speedMul * (1 + bloodlust), inst.cfg.MaxHuntSpeed)
 			end
 			inst.mover.update(result.moveTarget, dt)
 
@@ -612,10 +619,17 @@ while true do
 						end)
 						for i = 2, #list do
 							local inst = list[i]
-							inst.state = inst.fsm.newState() -- back off; the closer hunter takes it
-							inst.chaseStartClock = nil
-							inst.dormantUntil = now + SHARED.CoopPeelSeconds
-							inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
+							-- Only peel a farther hunter that is itself CLOSE to the player (a real death-
+							-- pincer). If it's far, leave it -- otherwise it ping-pongs in/out of dormancy
+							-- every CoopPeelSeconds while merely sharing a distant target.
+							local r = inst.rig.PrimaryPart
+							local dist = r and (r.Position - hrp.Position).Magnitude or math.huge
+							if dist <= SHARED.PeelConvergenceDistance then
+								inst.state = inst.fsm.newState() -- back off; the closer hunter takes it
+								inst.chaseStartClock = nil
+								inst.dormantUntil = now + SHARED.CoopPeelSeconds
+								inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
+							end
 						end
 					end
 				end
