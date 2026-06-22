@@ -459,6 +459,42 @@ Config.Noise = table.freeze({
 	MeterLabel = "NOISE",
 })
 
+-- Noise DECOY: noise as a WEAPON, not just a liability (the Granny lesson) ----------
+-- The monkey is the near-blind NOISE hunter; the decoy lets you USE that against it. Throw a
+-- rattling noisemaker ahead of you -> it lands + fires ServerSignals.NoiseEvent there -> the
+-- monkey investigates the WRONG spot, and you slip past. Server-authoritative: the client sends
+-- only intent (no payload), the server computes the landing point from the player's OWN known
+-- position+facing (never a client-supplied position) and clamps it to the first wall, so it can't
+-- be aimed through geometry or spoofed. A cooldown stops spam. Only the deaf bunny ignores it.
+Config.Decoy = table.freeze({
+	ThrowKey = Enum.KeyCode.Q, -- toss a decoy
+	ThrowDistance = 42, -- studs ahead the decoy lands (clamped to the first wall along the throw)
+	Cooldown = 8, -- seconds between throws (server-authoritative)
+	IntentRateLimit = 0.25, -- min seconds between accepted ThrowDecoy messages (anti-spam, hostile input)
+	WallPadding = 2.5, -- studs short of a hit wall the decoy lands (so it never lands inside geometry)
+	-- The monkey re-homes on each pulse, so a few spaced pulses keep it drawn to the spot while the
+	-- decoy rattles (each NoiseEvent is a fresh one-shot the monkey investigates).
+	NoisePulses = 3,
+	PulseInterval = 0.45, -- seconds between pulses
+	LifeSeconds = 2.0, -- the decoy part rattles this long, then despawns
+
+	-- The decoy part (a small rattling noisemaker, server-spawned so all clients see/hear it).
+	Size = Vector3.new(0.8, 0.8, 0.8),
+	Color = Color3.fromRGB(220, 210, 120),
+	Material = Enum.Material.Metal,
+	LightColor = Color3.fromRGB(255, 240, 150),
+	LightBrightness = 2.0,
+	LightRange = 12,
+	RattleSoundId = "rbxassetid://9119717523", -- the verified mechanical-click id (a rattling tick)
+	RattleVolume = 0.7,
+	RattleRange = 70, -- studs RollOffMaxDistance (it should read from a distance -- that's the point)
+
+	-- On-screen touch button (mobile), stacked above the RUN/LIGHT buttons.
+	TouchBottomOffset = 370, -- px from the bottom (above LIGHT at 250)
+	ButtonColor = Color3.fromRGB(220, 210, 120),
+	Label = "DECOY",
+})
+
 -- Traps: telegraphed hazards -----------------------------------------------------
 -- Server-authoritative floor traps (spatial, never Touched). Each is FAIR: an always-
 -- visible red arrow + faint glow telegraphs it, and entering it starts a short wind-up
@@ -621,7 +657,7 @@ Config.Onboarding = table.freeze({
 	IntroNoun = "KEYS",
 	IntroSub = "...then escape through the EXIT.",
 	IntroBannerSeconds = 5, -- how long the center intro banner holds before fading
-	ControlsHint = "WASD Move      F Flashlight      Shift Sprint",
+	ControlsHint = "WASD Move    F Flashlight    Shift Sprint    Q Decoy",
 	ControlsHintSeconds = 9, -- how long the controls hint shows (or until first move)
 	ObjectiveLabel = "KEYS", -- "KEYS 0/3"
 	ObjectiveExitText = "ALL KEYS — REACH THE EXIT", -- objective tracker once keys are done
