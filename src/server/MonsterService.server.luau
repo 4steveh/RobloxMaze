@@ -407,13 +407,24 @@ spawnMonsters()
 local peaceUntil = os.clock() + Config.Round.PeaceSeconds
 local prevPeace = true -- was the peace window active last tick? (so the peace->hunt transition fires once)
 
+-- Maze-ready gate: while the runtime maze is mid-carve, monsters must NOT hunt (they'd path a
+-- half-built navmesh). MazeService fires MazeRebuilt when a carve + settle completes. Default TRUE
+-- when the maze is disabled (a static layout never carves, so it's always ready). This makes the
+-- peace window AND the carve genuinely gate hunting, instead of only "happening" to overlap.
+local mazeReady = not Config.Maze.Enabled
+ServerSignals.get(ServerSignals.Names.MazeRebuilt).Event:Connect(function()
+	mazeReady = true
+end)
+
 -- New round: reset every rig (clear the FSM, send it home, brief dormancy) so no monster
--- is left chasing a player from the round that just ended, and re-arm the peace window.
+-- is left chasing a player from the round that just ended, re-arm the peace window, and HOLD the
+-- hunt until the maze re-carves (MazeService re-carves on the same RoundReset).
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	for _, inst in instances do
 		pcall(repelHome, inst)
 	end
 	peaceUntil = os.clock() + Config.Round.PeaceSeconds
+	mazeReady = not Config.Maze.Enabled
 end)
 
 -- Server-authoritative tick on the shared poll cadence (never Touched). dt comes
@@ -492,9 +503,10 @@ while true do
 				end
 			end
 
-			-- Dormant: the peace window (round start) OR the post-catch window -- sense nothing, so
-			-- the (freshly reset) FSM just patrols/paces its territory instead of hunting.
-			local dormant = peace or now < (inst.dormantUntil or 0)
+			-- Dormant: the peace window, a mid-carve maze (not mazeReady), OR the post-catch window --
+			-- sense nothing, so the (freshly reset) FSM just patrols/paces its territory, never pathing
+			-- a half-built maze. (The contact catch above still fires -- touching a monster is always death.)
+			local dormant = peace or not mazeReady or now < (inst.dormantUntil or 0)
 			-- Deliver a world noise event to this rig ONCE: only a HEARING rig (cfg.HearRange =
 			-- the monkey), awake, in range of a still-fresh event it hasn't already consumed.
 			local noiseEvent = nil

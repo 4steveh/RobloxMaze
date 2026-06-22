@@ -21,16 +21,24 @@ local CollectionService = game:GetService("CollectionService")
 
 local Config = require(ReplicatedStorage.Config)
 local Maze = require(ReplicatedStorage.Maze)
+local Tags = require(ReplicatedStorage.Tags)
 local ServerSignals = require(script.Parent.ServerSignals)
 
 local M = Config.Maze
+local SHARED = Config.Monster.Shared -- pathfinding agent dims (single source of truth)
 local mazeRebuilt = ServerSignals.get(ServerSignals.Names.MazeRebuilt)
 
 if not M.Enabled then
 	return -- static layout: leave the placed maze untouched
 end
 
-local maze = Workspace:WaitForChild("Maze")
+-- A clean checkout has no Workspace.Maze (it's unsaved place content). Bound the wait so a missing
+-- folder DEGRADES (warn, leave the static maze / no maze) instead of hanging the service forever.
+local maze = Workspace:WaitForChild("Maze", 10)
+if not maze then
+	warn("[MazeService] Workspace.Maze not found within 10s -- runtime maze randomization disabled this session.")
+	return
+end
 
 -- World position of cell (c,r)'s centre (floor height).
 local function cellCenter(c: number, r: number): Vector3
@@ -106,6 +114,39 @@ end
 buildPerimeterRow(M.OriginZ + M.CellSize * M.Rows, M.ExitCol, "MGN_") -- grid-north (the gate line)
 buildPerimeterRow(M.OriginZ, M.EntranceCol, "MGS_") -- grid-south (the daycare-entrance line)
 
+-- Boot validation: the cell-centre reachability guarantee only holds if the in-grid markers (keys/
+-- traps/monkey-nest/patrol nodes) actually SIT at cell centres -- a marker drifted onto an edge can
+-- be walled off by a raising wall on some random rounds (a silent, round-dependent break). We can't
+-- auto-fix placed content, but we WARN loudly so it's caught before publish, not in a playtest.
+local function validateMarkers()
+	local gridMaxX = M.OriginX + M.CellSize * M.Cols
+	local gridMaxZ = M.OriginZ + M.CellSize * M.Rows
+	for _, tag in ipairs({ Tags.KeySpot, Tags.Trap, Tags.MonkeySpawn, Tags.PatrolPoint }) do
+		for _, marker in ipairs(CollectionService:GetTagged(tag)) do
+			if marker:IsA("BasePart") then
+				local p = marker.Position
+				if p.X >= M.OriginX and p.X <= gridMaxX and p.Z >= M.OriginZ and p.Z <= gridMaxZ then
+					-- in the maze grid: nearest cell centre and the XZ deviation from it
+					local c = math.floor((p.X - M.OriginX) / M.CellSize)
+					local r = math.floor((p.Z - M.OriginZ) / M.CellSize)
+					local centre = cellCenter(c, r)
+					local devX, devZ = math.abs(p.X - centre.X), math.abs(p.Z - centre.Z)
+					if devX > 2 or devZ > 2 then
+						warn(
+							`[MazeService] '{marker.Name}' [{tag}] at ({string.format("%.0f,%.0f", p.X, p.Z)}) is OFF cell centre ({string.format(
+								"%.0f,%.0f",
+								centre.X,
+								centre.Z
+							)}) by ({string.format("%.0f,%.0f", devX, devZ)}) -- it may be walled off on some random mazes. Snap it to the cell centre.`
+						)
+					end
+				end
+			end
+		end
+	end
+end
+task.defer(validateMarkers) -- after CollectionService tags settle
+
 -- Open (slide into the well, no collision) or close (raise, collidable) one edge's wall.
 local function setOpen(edge: string, open: boolean)
 	local w = edgeWalls[edge]
@@ -121,22 +162,31 @@ local function setOpen(edge: string, open: boolean)
 	end
 end
 
--- A path smoke test between two cell centres (navmesh truth -- catches a stale tile).
-local function pathOK(fromC: number, fromR: number, toC: number, toR: number): boolean
-	local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = false })
+-- A path smoke test between two cell centres (navmesh truth -- catches a stale tile). Uses the
+-- monster AGENT dims (Config single source) so it validates the path the rigs actually walk.
+local function pathStatus(fromC: number, fromR: number, toC: number, toR: number): string
+	local path = PathfindingService:CreatePath({
+		AgentRadius = SHARED.AgentRadius,
+		AgentHeight = SHARED.AgentHeight,
+		AgentCanJump = false,
+	})
 	local ok = pcall(function()
 		path:ComputeAsync(cellCenter(fromC, fromR) + Vector3.new(0, 3, 0), cellCenter(toC, toR) + Vector3.new(0, 3, 0))
 	end)
-	return ok and path.Status == Enum.PathStatus.Success
+	return if ok then tostring(path.Status) else "ComputeError"
 end
 
--- Carve a fresh random layout, verify, and announce. Retries on a failed smoke test.
-local carving = false
-local function carve()
-	if carving then
-		return
+local function applyLayout(open: { [string]: boolean })
+	for edge in edgeWalls do
+		setOpen(edge, open[edge] == true)
 	end
-	carving = true
+end
+
+-- One carve: generate -> apply -> settle -> smoke test, retrying. NEVER leaves an UNVERIFIED layout:
+-- on total failure it reverts to the last layout that passed (the safe fallback), so a freak navmesh
+-- hiccup can't ship a round with a possibly-disconnected exit.
+local lastGoodLayout: { [string]: boolean }? = nil
+local function carveOnce(): boolean
 	local gateC, gateR = M.ExitCol, M.Rows - 1 -- the cell just south of the gate
 	for attempt = 1, M.MaxCarveRetries do
 		local rng = Random.new()
@@ -144,29 +194,51 @@ local function carve()
 		Maze.braid(res.open, M.Cols, M.Rows, rng, M.BraidFraction)
 		-- Layer 1: graph proof (microseconds; catches a logic error before we touch the world).
 		if Maze.allReachable(res.open, M.Cols, M.Rows, M.StartCol, 0) then
-			for edge in edgeWalls do
-				setOpen(edge, res.open[edge] == true)
+			applyLayout(res.open)
+			task.wait(M.NavmeshSettleSeconds) -- Layer 2: navmesh truth, after the tiles re-rasterize.
+			local status = pathStatus(M.EntranceCol, 0, gateC, gateR)
+			if status == "Enum.PathStatus.Success" then
+				lastGoodLayout = res.open
+				return true
 			end
-			-- Layer 2: navmesh truth, after the tiles re-rasterize.
-			task.wait(M.NavmeshSettleSeconds)
-			if pathOK(M.EntranceCol, 0, gateC, gateR) then
-				carving = false
-				mazeRebuilt:Fire()
-				return
-			end
-			warn(`[MazeService] carve attempt {attempt}: navmesh smoke test failed; re-carving`)
+			warn(`[MazeService] carve attempt {attempt}/{M.MaxCarveRetries}: smoke test {status}; re-carving`)
 		end
 	end
-	warn("[MazeService] all carve retries failed the smoke test; proceeding with the last layout")
+	if lastGoodLayout then
+		warn("[MazeService] all carve retries failed; reverting to the last VERIFIED layout")
+		applyLayout(lastGoodLayout)
+		task.wait(M.NavmeshSettleSeconds)
+	else
+		warn(
+			"[MazeService] all carve retries failed and no verified layout exists; using the last attempt (graph-connected)"
+		)
+	end
+	return false
+end
+
+-- Carve, COALESCING re-carve requests: a RoundReset that arrives mid-carve is never dropped (which
+-- would silently reuse the previous round's maze) -- it runs once the in-flight carve finishes.
+local carving = false
+local pendingCarve = false
+local function carve()
+	if carving then
+		pendingCarve = true
+		return
+	end
+	carving = true
+	repeat
+		pendingCarve = false
+		carveOnce()
+		mazeRebuilt:Fire() -- announce ready (MonsterService gates its hunt on this)
+	until not pendingCarve
 	carving = false
-	mazeRebuilt:Fire()
 end
 
 -- Initial carve at boot (async: the settle wait must not block the rest of server startup; monsters
--- are dormant during the peace window, so the maze is ready long before they hunt).
+-- are gated dormant until MazeRebuilt + through the peace window, so the maze is ready before they hunt).
 task.spawn(carve)
 
--- A fresh layout every round. The peace window re-arms on RoundReset too, covering the settle.
+-- A fresh layout every round.
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	task.spawn(carve)
 end)
