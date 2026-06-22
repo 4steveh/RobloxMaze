@@ -669,7 +669,7 @@ Config.Onboarding = table.freeze({
 	-- face that threat, so the COUNTER is taught in the moment rather than in an up-front wall
 	-- of text (Roblox's own FTUE guidance). Driven by the MonsterStateChanged remote.
 	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
-	AlertTip = "It HEARD you — slow down and move quietly",
+	AlertTip = "It HEARD you — move quietly, or throw a DECOY (Q) to send it the wrong way",
 	-- Shown the first time you approach a floor trap, BEFORE you can step on it blind. Teaches
 	-- BOTH halves of the new trap design: avoid them yourself, but bait a chasing monster across one.
 	TrapTip = "⚠ Glowing RED floor marks are TRAPS — avoid them, but lure a chasing monster onto one",
