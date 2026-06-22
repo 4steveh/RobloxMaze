@@ -27,6 +27,7 @@ local keyChime = stinger(ST.KeyChimeId, ST.KeyChimeVolume, "UI")
 local lockedThunk = stinger(ST.LockedThunkId, ST.LockedThunkVolume, "SFX")
 local winJingle = stinger(ST.WinJingleId, ST.WinJingleVolume, "Music")
 local exitHeave = stinger(Config.Exit.OpenSoundId, Config.Exit.OpenSoundVolume, "SFX") -- the gate sliding open
+local huntBegins = stinger(ST.HuntBeginsId, ST.HuntBeginsVolume, "Monster") -- the peace window ended
 
 Remotes.get(Remotes.Names.KeyCollected).OnClientEvent:Connect(function()
 	keyChime:Play()
@@ -34,6 +35,12 @@ end)
 
 Remotes.get(Remotes.Names.ExitLocked).OnClientEvent:Connect(function()
 	lockedThunk:Play()
+end)
+
+-- The hunt begins (peace window ended): a dread sting, ducking the ambient bed briefly so it lands.
+Remotes.get(Remotes.Names.HuntBegins).OnClientEvent:Connect(function()
+	AudioGroups.duck("Ambient", 0.25, 1.5)
+	huntBegins:Play()
 end)
 
 -- The exit gate heaving open (heard by the whole lobby when anyone escapes).
