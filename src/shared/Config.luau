@@ -146,6 +146,46 @@ Config.Exit = table.freeze({
 	OpenSoundVolume = 0.85,
 })
 
+-- Runtime maze randomization (the replayability lever) ---------------------------
+-- A different maze layout every round so it can't be memorized. SAFE approach (avoids a confirmed
+-- unfixed Roblox navmesh bug where DESTROYED parts leave phantom navmesh): a permanent wall
+-- SUPERSTRUCTURE -- one anchored wall per potential interior edge -- where "open" SLIDES the wall
+-- down into a well below the floor (+ CanCollide off) and "closed" raises it. Moving anchored parts
+-- re-rasterizes the navmesh reliably; destroying/creating them is the buggy path. MazeService builds
+-- the superstructure FROM CODE (reproducible) and carves a fresh spanning tree (Maze.generate) each
+-- round; markers sit at CELL CENTRES (always open floor), so nothing is ever walled in. The grid:
+-- Cols x Rows cells of CellSize, SW corner at (OriginX, OriginZ); cell (c,r) centre =
+-- (OriginX + CellSize*c + CellSize/2, OriginZ + CellSize*r + CellSize/2). The exit alcove + gate sit
+-- NORTH of the grid at ExitCol; the daycare doorway is the south-perimeter gap at EntranceCol.
+Config.Maze = table.freeze({
+	Enabled = true, -- master switch (false = keep a single static layout)
+
+	-- Grid (matches the existing maze footprint: floor X[-60..60], interior rows up to the exit alcove).
+	Cols = 10,
+	Rows = 9,
+	CellSize = 12, -- studs per cell (the existing grid)
+	OriginX = -60, -- world X of the west edge of column 0
+	OriginZ = 64, -- world Z of the south edge of row 0
+	FloorY = 0, -- top surface of the maze floor (walls stand on it)
+
+	-- Wall superstructure.
+	WallThickness = 2,
+	WallHeight = 14, -- floor-to-ceiling (matches the perimeter walls)
+	WellDepth = 20, -- studs an OPEN wall slides DOWN (its top ends well below the floor, hidden)
+	WallColor = Color3.fromRGB(70, 74, 70), -- matches the maze's slate walls
+	WallMaterial = Enum.Material.Slate,
+
+	-- Generation.
+	BraidFraction = 0.08, -- open ~8% of extra edges (fewer dead-ends; only OPENS, can't disconnect)
+	StartCol = 5, -- the recursive-backtracker seed cell (the entrance column, row 0)
+	EntranceCol = 5, -- south-perimeter gap = the daycare doorway (must stay open)
+	ExitCol = 5, -- north-perimeter gap = the ExitGate column (the exit alcove sits beyond it)
+
+	-- Verification + settle (the navmesh-safety gate).
+	NavmeshSettleSeconds = 1.5, -- wait after a carve before the path smoke test (tiles re-rasterize)
+	MaxCarveRetries = 6, -- re-seed this many times if the ComputeAsync smoke test fails, then fall back
+})
+
 -- Round loop --------------------------------------------------------------------
 -- The game LOOPS (it used to be single-shot: keys spawned once, a win latched forever).
 -- RoundService watches for a win (any player's GameState -> Won), holds a celebration,
