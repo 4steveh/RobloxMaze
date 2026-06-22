@@ -431,6 +431,11 @@ Config.Monster = table.freeze({
 			HeadBob = 0.16, -- rad head bob with the hop
 			IdleBreathHz = 0.5, -- breaths/second when idle
 			IdleBreathAmp = 0.1, -- studs of vertical breathing when idle
+			-- Weight + naturalness (the fix for "it glides like a skin, not a creature"): the body
+			-- DROPS on each footfall while walking (mass/impact, not a constant-height float) and the
+			-- walk legs use an ANTI-SLIDE stride (planted foot sweeps back, no skate) instead of a sine.
+			FootfallDip = 0.2, -- studs the body sinks on each footfall (2 per stride) while walking
+			WalkLean = 0.12, -- rad forward body lean into a walk (positive = forward, deeper while hunting)
 		}),
 
 		-- The monkey: an articulated primitive primate doing a 4-beat BOUNDING gallop
@@ -465,6 +470,10 @@ Config.Monster = table.freeze({
 			IdleBreathAmp = 0.07, -- studs of vertical breathing when idle
 			IdleScanSpeed = 1.3, -- idle head-scan speed
 			IdleScanAmp = 0.25, -- rad idle head-scan yaw amplitude
+			-- Weight + naturalness (anti-glide): the torso DROPS on each footfall while walking and the
+			-- walk limbs use an ANTI-SLIDE stride (planted limb sweeps back) instead of a sine.
+			FootfallDip = 0.13, -- studs the torso sinks on each footfall while walking
+			WalkLean = 0.1, -- rad extra forward lean into a walk (adds to the hunch)
 		}),
 	}),
 })
