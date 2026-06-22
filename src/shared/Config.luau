@@ -318,6 +318,10 @@ Config.Monster = table.freeze({
 		-- climax fair (the bunny backs off, the monkey takes the hand-off).
 		MutualExclusion = true,
 		CoopPeelSeconds = 2.5, -- seconds the peeled-off rig disengages before it may re-acquire
+		-- Only PEEL a second hunter when it's actually part of a death-PINCER (close to the player),
+		-- not whenever two rigs merely share a target far apart -- which made the farther one ping-pong
+		-- in/out of dormancy every CoopPeelSeconds. With the territory split they're usually far anyway.
+		PeelConvergenceDistance = 30, -- studs: the farther hunter peels only if THIS close to the player
 
 		-- Bloodlust (DbD's anti-stall): a SINGLE unbroken chase that drags on past DelaySeconds ramps
 		-- the chaser's speed so you cannot circle one pillar forever -- but it RESETS the instant the
@@ -339,6 +343,10 @@ Config.Monster = table.freeze({
 		Bunny = table.freeze({
 			PatrolSpeed = 10, -- WalkSpeed while patrolling / searching
 			ChaseSpeed = 19, -- WalkSpeed while chasing
+			-- Hard CAP on the bunny's hunt speed after Aggression x Bloodlust stack: kept BELOW player
+			-- SprintSpeed 22 so a sprint burst can ALWAYS open a gap ("a chase is winnable"). Without
+			-- it, 19 x 1.18 (aggro) x 1.25 (bloodlust) = 28 > 22 made the bunny literally unoutrunnable.
+			MaxHuntSpeed = 21, -- < SprintSpeed 22: a sprinter still slowly gains even at full ramp
 			DetectRange = 50, -- max distance the bunny can see a player
 			DetectHalfAngle = 45, -- half the vision cone (so a 90-degree total cone)
 			EyeHeight = 2, -- studs above the rig's HRP that the line-of-sight ray starts from
@@ -371,9 +379,16 @@ Config.Monster = table.freeze({
 			PatrolSpeed = 11, -- ambling near its nest
 			InvestigateSpeed = 18, -- > WalkSpeed (runs down a walker who stays loud), < SprintSpeed (a sprinter gains)
 			LungeSpeed = 24, -- > SprintSpeed: unoutrunnable BY DESIGN, but sight-gated + short -> counter is "break sight"
+			-- Cap the monkey's hunt speed after the ramp: the LUNGE is meant to exceed sprint (sight-
+			-- gated + brief), but 24 x 1.475 = 35 is absurd; hold it to a tense-but-fair ceiling.
+			MaxHuntSpeed = 27, -- the lunge stays unoutrunnable but not teleporty at full aggression
 
 			-- Hearing (no LoS -- it hears through walls). effectiveNoise = NoiseLevel x falloff(dist, HearRange).
 			HearRange = 90, -- studs to zero noise (longer than bunny sight: sound travels)
+			-- Falloff SHAPE: <1 = gentler than linear, so a SPRINTING player (loud) is heard across MORE
+			-- of the maze (the fix for "the monkey feels deaf/passive in a big maze"). A sprinter now
+			-- crosses HearThreshold at ~65 studs (was ~49 with linear). WALKING stays safe (0.35<0.45).
+			HearFalloffPower = 0.6,
 			HearThreshold = 0.45, -- effectiveNoise to commit to Alert (walking+quiet sits below this -> safe)
 			LoseHearThreshold = 0.25, -- effectiveNoise below which it starts losing the trail
 			LoseHearSeconds = 3, -- seconds below LoseHearThreshold before Investigate -> Search
