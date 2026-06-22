@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Config)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
+local Attributes = require(ReplicatedStorage.Attributes)
 
 local C = Config.Compass
 local player = Players.LocalPlayer
@@ -73,6 +74,60 @@ end
 
 Discovery.observe(Tags.ActiveKey, addBeacon, removeBeacon)
 
+-- EXIT beacon (the win-phase wayfinder): a through-wall "EXIT" marker over each ExitDoor, shown
+-- ONLY once the team holds every key -- so finding the exit is clear at the moment you need it,
+-- without marking it during the key-hunt (exploration stays tense). Mirrors the key-beacon language.
+local exitBeacons = {} -- [exitPart] = BillboardGui
+local function addExitBeacon(part)
+	if not part:IsA("BasePart") or exitBeacons[part] then
+		return
+	end
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "ExitBeacon"
+	bb.AlwaysOnTop = true
+	bb.Size = UDim2.fromOffset(C.BeaconSize + 10, C.BeaconSize + 28)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, C.BeaconHeight + 2, 0)
+	bb.LightInfluence = 0
+	bb.Enabled = false -- until all keys are in
+
+	local dot = Instance.new("Frame")
+	dot.AnchorPoint = Vector2.new(0.5, 1)
+	dot.Position = UDim2.fromScale(0.5, 1)
+	dot.Size = UDim2.fromOffset(C.BeaconSize + 10, C.BeaconSize + 10)
+	dot.BackgroundColor3 = Config.Exit.UnlockedColor
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = dot
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(12, 25, 14)
+	stroke.Thickness = 2
+	stroke.Parent = dot
+	dot.Parent = bb
+
+	local label = Instance.new("TextLabel")
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.Position = UDim2.fromScale(0.5, 0)
+	label.Size = UDim2.fromOffset(C.BeaconSize + 40, 16)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack
+	label.Text = "EXIT"
+	label.TextScaled = true
+	label.TextColor3 = Config.Exit.UnlockedColor
+	label.TextStrokeTransparency = 0.3
+	label.Parent = bb
+
+	bb.Parent = part
+	exitBeacons[part] = bb
+end
+local function removeExitBeacon(part)
+	local bb = exitBeacons[part]
+	if bb then
+		bb:Destroy()
+		exitBeacons[part] = nil
+	end
+end
+Discovery.observe(Tags.ExitDoor, addExitBeacon, removeExitBeacon)
+
 -- Edge arrow to the nearest active key --------------------------------------------
 local gui = Instance.new("ScreenGui")
 gui.Name = "KeyCompass"
@@ -108,6 +163,12 @@ local function nearestKey(fromPos)
 end
 
 RunService.RenderStepped:Connect(function()
+	-- Light the EXIT beacons once the team holds every key (KeyCount is server-set + replicated).
+	local hasAllKeys = (player:GetAttribute(Attributes.KeyCount) or 0) >= Config.Keys.RequiredToWin
+	for _, bb in exitBeacons do
+		bb.Enabled = hasAllKeys
+	end
+
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 	local camera = Workspace.CurrentCamera
