@@ -16,8 +16,10 @@ local Remotes = require(ReplicatedStorage.Remotes)
 local Enums = require(ReplicatedStorage.Enums)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
+local Attributes = require(ReplicatedStorage.Attributes)
 
 local O = Config.Onboarding
+local HEAR_THRESHOLD = Config.Monster.Species.Monkey.HearThreshold -- when the monkey can hear you
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -74,6 +76,25 @@ stateRemote.OnClientEvent:Connect(function(state)
 	elseif state == Enums.MonsterState.Alert and not shown.alert then
 		shown.alert = true
 		showTip(O.AlertTip)
+	end
+end)
+
+-- The hunt begins (peace window ended): a VISUAL cue lobby-wide, so the calm->dread transition is
+-- seen, not just heard (the StingerController plays the sting). Fires for EVERY player, not just a target.
+Remotes.get(Remotes.Names.HuntBegins).OnClientEvent:Connect(function()
+	if not shown.hunt then
+		shown.hunt = true
+		showTip(O.HuntBeginsTip)
+	end
+end)
+
+-- Teach the NOISE counter the first time YOUR OWN noise crosses the monkey's hearing threshold (you
+-- sprinted). Driven by the local NoiseLevel attribute, so it teaches a co-op teammate too -- the
+-- Chase/Alert tips above only reach whoever the monster is currently targeting.
+player:GetAttributeChangedSignal(Attributes.NoiseLevel):Connect(function()
+	if not shown.loud and (player:GetAttribute(Attributes.NoiseLevel) or 0) >= HEAR_THRESHOLD then
+		shown.loud = true
+		showTip(O.LoudTip)
 	end
 end)
 

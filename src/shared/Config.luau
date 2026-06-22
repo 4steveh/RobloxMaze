@@ -745,6 +745,12 @@ Config.Onboarding = table.freeze({
 	-- BOTH halves of the new trap design: avoid them yourself, but bait a chasing monster across one.
 	TrapTip = "⚠ Glowing RED floor marks are TRAPS — avoid them, but lure a chasing monster onto one",
 	TrapTipRadius = 16, -- studs: a trap within this (first time) triggers the warning tip
+	-- Shown the first time the player's OWN noise crosses the monkey's hearing threshold (i.e. they
+	-- sprinted). The Chase/Alert tips only reach the monster's CURRENT target, so a co-op teammate
+	-- never learns the noise counter; this fires off the player's LOCAL NoiseLevel, so everyone does.
+	LoudTip = "You're LOUD — the MONKEY hears sprinting. Walk to go silent, or throw a DECOY (Q)",
+	-- Shown lobby-wide when the pre-round PEACE window ends (a VISUAL companion to the HuntBegins sting).
+	HuntBeginsTip = "THE HUNT BEGINS — the monsters are awake now",
 	TipSeconds = 5, -- how long a tip holds before fading
 })
 
