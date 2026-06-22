@@ -45,6 +45,12 @@ local Attributes = {
 	-- MonsterAnimController (to pick the gait recipe) and per-type monster audio.
 	MonsterSpecies = "Species",
 
+	-- number on a MONSTER RIG (not a Player): `workspace:GetServerTimeNow()` until which the rig
+	-- is STUNNED (frozen) after tripping a floor trap. Set by TrapService when a hunting rig runs
+	-- over an armed trap; MonsterService freezes the rig (WalkSpeed 0, no move) while now < this.
+	-- The seam that makes traps a chase tool without coupling TrapService to monster internals.
+	MonsterStunnedUntil = "StunnedUntil",
+
 	-- string on a MONSTER RIG (not a Player): the rig's current Enums.MonsterState
 	-- ("Patrol"/"Chase"/...). Server-authoritative (written by MonsterService each tick);
 	-- read by the client MonsterAnimController (gait blend), MonsterAudioController

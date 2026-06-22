@@ -164,6 +164,19 @@ end
 -- States ---------------------------------------------------------------------------
 
 local function tickPatrol(state: FSMState, sensed: Sensed, cfg: Config): TickResult
+	-- A player physically ON the monkey is ALWAYS grabbed, in every state, regardless of noise --
+	-- the fix for "you can walk right on top of it without being caught". Catch is pure proximity.
+	local caught = caughtPlayer(sensed, cfg)
+	if caught then
+		return { moveTarget = sensed.rigPosition, speed = cfg.PatrolSpeed, caught = caught }
+	end
+	-- Near-blind is NOT blind: a player who strays into the monkey's short, wide sight cone
+	-- (DetectRange ~14) is SEEN and lunged at even while moving quietly -- so creeping right up
+	-- to its face is no longer free. Hearing stays the long-range sense; sight is the close backstop.
+	local seen = nearestVisible(sensed)
+	if seen then
+		return enterChase(state, seen, cfg)
+	end
 	local heard = loudestHeard(sensed, cfg)
 	if heard then
 		return enterAlert(state, heard)
@@ -190,6 +203,16 @@ local function tickPatrol(state: FSMState, sensed: Sensed, cfg: Config): TickRes
 end
 
 local function tickAlert(state: FSMState, sensed: Sensed, cfg: Config): TickResult
+	-- The Alert freeze is a fair TELL, not a free pass to stroll up: a player who reaches the arms
+	-- is caught, and one who steps into the short sight cone is lunged at (Chase) immediately.
+	local caught = caughtPlayer(sensed, cfg)
+	if caught then
+		return { moveTarget = sensed.rigPosition, speed = cfg.InvestigateSpeed, caught = caught }
+	end
+	local seenNow = nearestVisible(sensed)
+	if seenNow then
+		return enterChase(state, seenNow, cfg)
+	end
 	state.alertElapsed += sensed.dt
 	local heard = loudestHeard(sensed, cfg)
 	if heard then
@@ -309,6 +332,18 @@ local function tickSearch(state: FSMState, sensed: Sensed, cfg: Config): TickRes
 end
 
 function MonkeyFSM.tick(state: FSMState, sensed: Sensed, cfg: Config): TickResult
+	-- A WORLD noise event (a sprung trap, etc.) the monkey just heard: rush it -- UNLESS it already
+	-- has eyes on prey (a real player beats a noise flare). MonsterService delivers this once per
+	-- event, so re-entering Investigate here is a clean one-shot transition, not a per-tick reset.
+	if sensed.noiseEvent and state.name ~= Enums.MonsterState.Chase then
+		-- A catch still takes priority -- a player on top of it is grabbed before it chases a noise.
+		local caught = caughtPlayer(sensed, cfg)
+		if caught then
+			return { moveTarget = sensed.rigPosition, speed = cfg.InvestigateSpeed, caught = caught }
+		end
+		state.lastHeard = sensed.noiseEvent
+		return enterInvestigate(state, cfg)
+	end
 	if state.name == Enums.MonsterState.Chase then
 		return tickChase(state, sensed, cfg)
 	elseif state.name == Enums.MonsterState.Investigate then

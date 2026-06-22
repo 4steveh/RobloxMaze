@@ -43,7 +43,7 @@ end
 -- through the map" (black screen) while being unable to move. Anchoring freezes the
 -- character exactly in place, upright, with no physics, so it can never clip or fall.
 -- WalkSpeed/Jump are also zeroed (SprintService skips downed players, so it never fights this).
-local function down(player)
+local function down(player, species)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not (humanoid and humanoid.Health > 0) then
@@ -59,14 +59,14 @@ local function down(player)
 	humanoid.WalkSpeed = 0
 	humanoid.JumpPower = 0
 	humanoid.JumpHeight = 0
-	caughtRemote:FireClient(player, true) -- the grab scare (downed variant — no respawn countdown)
+	caughtRemote:FireClient(player, true, species) -- the grab scare (downed variant — no respawn countdown); species drives which monster lunges
 end
 
 -- The classic death path (solo / disabled / full wipe): scare + checkpoint respawn.
-local function kill(player)
+local function kill(player, species)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	caughtRemote:FireClient(player, false)
+	caughtRemote:FireClient(player, false, species) -- species → the jumpscare shows the monster that caught you
 	if humanoid then
 		humanoid.Health = 0 -- SpawnService.Died → RespawnDelay → checkpoint respawn
 	end
@@ -146,15 +146,16 @@ local function bleedout(player)
 	end
 end
 
--- A monster reached a player: pick the outcome.
-ServerSignals.get(ServerSignals.Names.PlayerCaught).Event:Connect(function(player)
+-- A monster reached a player: pick the outcome. `species` (which monster) is forwarded to the
+-- client so the jumpscare shows the creature that actually caught you.
+ServerSignals.get(ServerSignals.Names.PlayerCaught).Event:Connect(function(player, species)
 	if player:GetAttribute(Attributes.Downed) == true then
 		return -- already down; ignore a re-trigger
 	end
 	if D.Enabled and rescuerExists(player) then
-		down(player)
+		down(player, species)
 	else
-		kill(player)
+		kill(player, species)
 	end
 end)
 

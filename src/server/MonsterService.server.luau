@@ -56,6 +56,20 @@ end
 local SHARED = Config.Monster.Shared
 local AGGRO = Config.Aggression
 
+-- World NOISE events (a sprung trap, via ServerSignals.NoiseEvent): the near-blind monkey
+-- investigates the loudest recent one. We store only the LATEST; the tick loop hands it to each
+-- eligible (hearing, in-range, not-dormant) rig exactly ONCE (tracked by event id), so it reads as
+-- a single fresh transition rather than re-firing every tick. The deaf bunny ignores it (no HearRange).
+local latestNoise = nil -- { pos = Vector3, id = number, expiresAt = os.clock() }
+local noiseIdCounter = 0
+ServerSignals.get(ServerSignals.Names.NoiseEvent).Event:Connect(function(pos)
+	if typeof(pos) ~= "Vector3" then
+		return
+	end
+	noiseIdCounter += 1
+	latestNoise = { pos = pos, id = noiseIdCounter, expiresAt = os.clock() + SHARED.NoiseEventReactSeconds }
+end)
+
 -- The maze's current aggression (0..1): how close the closest player is to winning
 -- (best KeyCount / RequiredToWin, server-read). Scales monster speed + sense range so the
 -- hunt tightens as the round nears its end. 0 when aggression is disabled.
@@ -249,17 +263,50 @@ local function createMover(rig: Model, cfg)
 	return mover
 end
 
+-- The monkey's nest(s) -- the bunny's patrol graph excludes nodes within NestExclusionRadius of
+-- these so the two species own distinct turf (the monkey GUARDS its nest/exit; the bunny roams
+-- the rest), instead of both pacing the same central corridor. Markers don't move, so cache once.
+local cachedMonkeyNests: { Vector3 }? = nil
+local function monkeyNestPositions(): { Vector3 }
+	if cachedMonkeyNests then
+		return cachedMonkeyNests
+	end
+	local nests = {}
+	for _, m in Discovery.getAll(Tags.MonkeySpawn) do
+		if m:IsA("BasePart") then
+			table.insert(nests, m.Position)
+		end
+	end
+	cachedMonkeyNests = nests
+	return nests
+end
+
 local warnedNoPatrol = false
 local function patrolNodePositions(): { Vector3 }
+	local nests = monkeyNestPositions()
+	local exclSq = SHARED.NestExclusionRadius * SHARED.NestExclusionRadius
 	local nodes = {}
 	for _, m in Discovery.getAll(Tags.PatrolPoint) do
 		if m:IsA("BasePart") then
-			table.insert(nodes, m.Position)
+			local pos = m.Position
+			local nearNest = false
+			for _, nest in nests do
+				local dx, dz = pos.X - nest.X, pos.Z - nest.Z
+				if dx * dx + dz * dz <= exclSq then
+					nearNest = true
+					break
+				end
+			end
+			if not nearNest then
+				table.insert(nodes, pos)
+			end
 		end
 	end
 	if #nodes == 0 and not warnedNoPatrol then
 		warnedNoPatrol = true
-		warn("[MonsterService] No PatrolPoint markers found; the bunny will idle near its spawn.")
+		warn(
+			"[MonsterService] No usable PatrolPoint markers (after monkey-nest exclusion); the bunny will idle near its spawn."
+		)
 	end
 	return nodes
 end
@@ -290,6 +337,7 @@ local function spawnMonsters()
 					mover = createMover(rig, def.cfg),
 					spawnPart = spawnPart, -- home to repel the rig to on a catch
 					dormantUntil = 0, -- os.clock() until which this rig senses nothing (post-catch)
+					lastNoiseId = 0, -- id of the last world NoiseEvent this rig consumed (deliver-once)
 					prevState = Enums.MonsterState.Patrol, -- last state we fired MonsterStateChanged for
 					prevTargetUserId = nil, -- the player it was chasing last tick (so a fade fires to them)
 				})
@@ -315,6 +363,7 @@ local function repelHome(inst)
 		inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, inst.cfg.BodySize.Y, 0)))
 	end
 	inst.dormantUntil = os.clock() + inst.cfg.PostCatchDormantSeconds
+	inst.rig:SetAttribute(Attributes.MonsterStunnedUntil, 0) -- a fresh start is never mid-stun
 	inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
 	inst.prevState = inst.state.name
 	inst.prevTargetUserId = nil
@@ -330,7 +379,9 @@ local function catch(inst, player: Player)
 		return
 	end
 	-- Hand the outcome to DownedService (down vs kill); MonsterService doesn't own player life.
-	playerCaughtSignal:Fire(player)
+	-- Pass the SPECIES so the jumpscare shows the monster that actually caught you (not whichever
+	-- rig the client happened to find first).
+	playerCaughtSignal:Fire(player, inst.species)
 
 	if inst.cfg.ResetToPatrolOnCatch then
 		repelHome(inst)
@@ -353,6 +404,8 @@ local lastClock = os.clock()
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
+	-- Server clock for trap-stun deadlines (TrapService writes StunnedUntil in this clock).
+	local serverNow = Workspace:GetServerTimeNow()
 	-- Clamp dt: a server hitch (ComputeAsync yields, GC pause) must not let a single
 	-- tick advance an FSM past its timers in one jump.
 	local dt = math.min(now - lastClock, Config.Spatial.PollInterval * SHARED.MaxTickDtFactor)
@@ -381,15 +434,41 @@ while true do
 			if not (root and rig.Parent) then
 				return
 			end
+			-- Trap stun: a rig that ran over an armed floor trap (TrapService wrote StunnedUntil)
+			-- stands FROZEN -- WalkSpeed 0, no move -- so a player who baited it across the trap
+			-- gets a real escape gap. It keeps its FSM state and resumes the hunt when the stun
+			-- expires (skip sensing + the FSM tick this frame; the dart/thunk FX already played).
+			local stunnedUntil = rig:GetAttribute(Attributes.MonsterStunnedUntil)
+			if stunnedUntil and serverNow < stunnedUntil then
+				local stunnedHum = rig:FindFirstChildOfClass("Humanoid")
+				if stunnedHum then
+					stunnedHum.WalkSpeed = 0
+				end
+				inst.mover.update(nil, dt)
+				return
+			end
 			-- Dormant after a catch: sense nothing, so the (freshly reset) FSM just
 			-- patrols home instead of re-acquiring the player at the kill/respawn site.
 			local dormant = now < (inst.dormantUntil or 0)
+			-- Deliver a world noise event to this rig ONCE: only a HEARING rig (cfg.HearRange =
+			-- the monkey), awake, in range of a still-fresh event it hasn't already consumed.
+			local noiseEvent = nil
+			if not dormant and inst.cfg.HearRange and latestNoise and now < latestNoise.expiresAt then
+				if
+					inst.lastNoiseId ~= latestNoise.id
+					and (latestNoise.pos - root.Position).Magnitude <= inst.cfg.HearRange
+				then
+					noiseEvent = latestNoise.pos
+					inst.lastNoiseId = latestNoise.id
+				end
+			end
 			local sensed = {
 				dt = dt,
 				rigPosition = root.Position,
 				patrolNodes = nodes,
 				homePosition = (inst.spawnPart and inst.spawnPart.Position) or root.Position, -- the nest/spawn
 				players = if dormant then {} else sensePlayers(rig, inst.cfg, rangeMul, sightParams),
+				noiseEvent = noiseEvent,
 			}
 			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
