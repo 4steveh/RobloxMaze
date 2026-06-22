@@ -55,6 +55,14 @@ end
 -- Cross-species constants the tick loop reads directly (not per-rig).
 local SHARED = Config.Monster.Shared
 local AGGRO = Config.Aggression
+local BL = SHARED.Bloodlust
+
+-- Lethal PURSUIT states (a rig actively closing on a player) -- used by the bloodlust speed ramp
+-- and mutual-exclusion. Alert is excluded: it's a stationary "it heard you" tell, not a chase.
+local LETHAL_HUNT = {
+	[Enums.MonsterState.Chase] = true,
+	[Enums.MonsterState.Investigate] = true,
+}
 
 -- World NOISE events (a sprung trap, via ServerSignals.NoiseEvent): the near-blind monkey
 -- investigates the loudest recent one. We store only the LATEST; the tick loop hands it to each
@@ -337,6 +345,7 @@ local function spawnMonsters()
 					mover = createMover(rig, def.cfg),
 					spawnPart = spawnPart, -- home to repel the rig to on a catch
 					dormantUntil = 0, -- os.clock() until which this rig senses nothing (post-catch)
+					chaseStartClock = nil, -- os.clock() the current unbroken lethal chase began (bloodlust ramp)
 					lastNoiseId = 0, -- id of the last world NoiseEvent this rig consumed (deliver-once)
 					prevState = Enums.MonsterState.Patrol, -- last state we fired MonsterStateChanged for
 					prevTargetUserId = nil, -- the player it was chasing last tick (so a fade fires to them)
@@ -363,6 +372,7 @@ local function repelHome(inst)
 		inst.rig:PivotTo(CFrame.new(spawnPart.Position + Vector3.new(0, inst.cfg.BodySize.Y, 0)))
 	end
 	inst.dormantUntil = os.clock() + inst.cfg.PostCatchDormantSeconds
+	inst.chaseStartClock = nil -- the chase is over; bloodlust resets
 	inst.rig:SetAttribute(Attributes.MonsterStunnedUntil, 0) -- a fresh start is never mid-stun
 	inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
 	inst.prevState = inst.state.name
@@ -390,12 +400,18 @@ end
 
 spawnMonsters()
 
+-- Pre-round PEACE window: until this clock the monsters roam their territory but sense nothing,
+-- so the round opens calm (the genre's calm->dread contrast). Set at boot for the first round and
+-- re-armed on every RoundReset.
+local peaceUntil = os.clock() + Config.Round.PeaceSeconds
+
 -- New round: reset every rig (clear the FSM, send it home, brief dormancy) so no monster
--- is left chasing a player from the round that just ended.
+-- is left chasing a player from the round that just ended, and re-arm the peace window.
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	for _, inst in instances do
 		pcall(repelHome, inst)
 	end
+	peaceUntil = os.clock() + Config.Round.PeaceSeconds
 end)
 
 -- Server-authoritative tick on the shared poll cadence (never Touched). dt comes
@@ -416,6 +432,8 @@ while true do
 	local aggro = currentAggression()
 	local rangeMul = 1 + aggro * AGGRO.MaxRangeBonus
 	local speedMul = 1 + aggro * AGGRO.MaxSpeedBonus
+	-- Peace window: at round start every rig senses nothing (it roams but does not hunt).
+	local peace = now < peaceUntil
 	-- Player-character list + the shared sight params, built ONCE per tick (not per rig).
 	local playerChars = {}
 	for _, player in Players:GetPlayers() do
@@ -447,9 +465,9 @@ while true do
 				inst.mover.update(nil, dt)
 				return
 			end
-			-- Dormant after a catch: sense nothing, so the (freshly reset) FSM just
-			-- patrols home instead of re-acquiring the player at the kill/respawn site.
-			local dormant = now < (inst.dormantUntil or 0)
+			-- Dormant: the peace window (round start) OR the post-catch window -- sense nothing, so
+			-- the (freshly reset) FSM just patrols/paces its territory instead of hunting.
+			local dormant = peace or now < (inst.dormantUntil or 0)
 			-- Deliver a world noise event to this rig ONCE: only a HEARING rig (cfg.HearRange =
 			-- the monkey), awake, in range of a still-fresh event it hasn't already consumed.
 			local noiseEvent = nil
@@ -471,9 +489,26 @@ while true do
 				noiseEvent = noiseEvent,
 			}
 			local result = inst.fsm.tick(inst.state, sensed, inst.cfg)
+
+			-- Bloodlust: a SINGLE unbroken lethal chase that drags on past DelaySeconds ramps the
+			-- chaser's speed (anti-stall -- you can't circle one pillar forever), and resets the
+			-- instant the chase ends. Tracked off the just-updated FSM state.
+			local bloodlust = 0
+			if LETHAL_HUNT[inst.state.name] then
+				inst.chaseStartClock = inst.chaseStartClock or now
+				if BL.Enabled then
+					local over = now - inst.chaseStartClock - BL.DelaySeconds
+					if over > 0 then
+						bloodlust = math.min(BL.MaxSpeedBonus, (over / BL.RampSeconds) * BL.MaxSpeedBonus)
+					end
+				end
+			else
+				inst.chaseStartClock = nil
+			end
+
 			local humanoid = rig:FindFirstChildOfClass("Humanoid")
 			if humanoid then
-				humanoid.WalkSpeed = result.speed * speedMul
+				humanoid.WalkSpeed = result.speed * speedMul * (1 + bloodlust)
 			end
 			inst.mover.update(result.moveTarget, dt)
 
@@ -507,6 +542,48 @@ while true do
 		end)
 		if not ok then
 			warn("[MonsterService] tick error on a rig (skipped this tick):", err)
+		end
+	end
+
+	-- Mutual exclusion: never let BOTH monsters press a lethal chase on the SAME player at once (the
+	-- genre's cheapest death). Group lethal hunters by target; for any player hunted by 2+, keep the
+	-- CLOSEST chaser and PEEL the rest (FSM reset + brief dormancy) so only one closes at a time. With
+	-- the monkey guarding the exit and the bunny driving you there, this hands the climax to one hunter.
+	if SHARED.MutualExclusion then
+		local ok, err = pcall(function()
+			local byTarget = {}
+			for _, inst in instances do
+				local uid = inst.state.targetUserId
+				if uid and LETHAL_HUNT[inst.state.name] and now >= (inst.dormantUntil or 0) then
+					local list = byTarget[uid] or {}
+					table.insert(list, inst)
+					byTarget[uid] = list
+				end
+			end
+			for uid, list in byTarget do
+				if #list >= 2 then
+					local player = Players:GetPlayerByUserId(uid)
+					local hrp = player and PlayerUtil.livingRootPart(player)
+					if hrp then
+						table.sort(list, function(a, b)
+							local ra, rb = a.rig.PrimaryPart, b.rig.PrimaryPart
+							local da = ra and (ra.Position - hrp.Position).Magnitude or math.huge
+							local db = rb and (rb.Position - hrp.Position).Magnitude or math.huge
+							return da < db
+						end)
+						for i = 2, #list do
+							local inst = list[i]
+							inst.state = inst.fsm.newState() -- back off; the closer hunter takes it
+							inst.chaseStartClock = nil
+							inst.dormantUntil = now + SHARED.CoopPeelSeconds
+							inst.rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
+						end
+					end
+				end
+			end
+		end)
+		if not ok then
+			warn("[MonsterService] mutual-exclusion pass error (skipped this tick):", err)
 		end
 	end
 end

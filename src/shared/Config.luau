@@ -154,6 +154,12 @@ Config.Exit = table.freeze({
 Config.Round = table.freeze({
 	WinCelebrationSeconds = 5, -- hold after a win (> Win.FreezeDuration) before the next round begins
 	ResetSettleSeconds = 1, -- guard window after a reset before another win can start a new round
+
+	-- Pre-round PEACE window (the genre's calm->dread contrast: DOORS' safe early doors, Specter's
+	-- peace timer). At each round start the monsters stay DORMANT -- they roam their territory but
+	-- sense nothing -- so players orient and start the key-hunt in calm; then the hunt switches on.
+	-- The threat being ABSENT for a beat is what makes its arrival land. 0 disables the window.
+	PeaceSeconds = 20, -- seconds of calm at round start before the monsters begin hunting
 })
 
 -- Aggression: the maze gets HOTTER as you near the win -------------------------
@@ -262,6 +268,25 @@ Config.Monster = table.freeze({
 		-- event is delivered to each eligible rig ONCE; this is how long after it fires it stays
 		-- "hearable" (covers the poll cadence + a little slack). The deaf bunny never reacts.
 		NoiseEventReactSeconds = 1.5, -- seconds a fired noise event remains sensable
+
+		-- Mutual exclusion (the fix for the genre's cheapest death: two lethal chasers converging on
+		-- one player with no escape). If BOTH monsters are actively hunting the SAME player, the one
+		-- FARTHER from them peels off (FSM reset + brief dormancy) so only one lethal chaser presses
+		-- at a time. With the monkey guarding the exit and the bunny driving you there, this keeps the
+		-- climax fair (the bunny backs off, the monkey takes the hand-off).
+		MutualExclusion = true,
+		CoopPeelSeconds = 2.5, -- seconds the peeled-off rig disengages before it may re-acquire
+
+		-- Bloodlust (DbD's anti-stall): a SINGLE unbroken chase that drags on past DelaySeconds ramps
+		-- the chaser's speed so you cannot circle one pillar forever -- but it RESETS the instant the
+		-- chase ends (catch, or losing the target), so the OPENING of every chase stays fair. Separate
+		-- from Config.Aggression (which ramps with key-progress, not chase duration).
+		Bloodlust = table.freeze({
+			Enabled = true,
+			DelaySeconds = 12, -- a chase must exceed this before the ramp starts
+			RampSeconds = 10, -- ...then climbs to the max bonus over this many more seconds
+			MaxSpeedBonus = 0.25, -- +25% chaser WalkSpeed at full bloodlust
+		}),
 	}),
 
 	-- Per-species behaviour + rig. The FSM reads (Shared U Species) as its `cfg` slice.
