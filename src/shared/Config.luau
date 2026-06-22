@@ -200,6 +200,12 @@ Config.Round = table.freeze({
 	-- sense nothing -- so players orient and start the key-hunt in calm; then the hunt switches on.
 	-- The threat being ABSENT for a beat is what makes its arrival land. 0 disables the window.
 	PeaceSeconds = 20, -- seconds of calm at round start before the monsters begin hunting
+
+	-- A round that NOBODY escapes still has to END -- otherwise the maze never re-carves and the
+	-- "a run is never worth zero" economy floor never pays out (a lobby that keeps dying is stuck on
+	-- one stale maze forever). After this long with no win, RoundService forces a fresh round (which
+	-- awards the floor + per-key + survival, escaped=false). PLAYTEST the length. 0 disables the timeout.
+	MaxRoundSeconds = 300, -- 5 minutes: a generous ceiling, mostly a safety net vs a stuck lobby
 })
 
 -- Aggression: the maze gets HOTTER as you near the win -------------------------
@@ -558,6 +564,7 @@ Config.Decoy = table.freeze({
 
 	-- On-screen touch button (mobile), stacked above the RUN/LIGHT buttons.
 	TouchBottomOffset = 370, -- px from the bottom (above LIGHT at 250)
+	ChipBottomOffset = 74, -- px from the bottom the cooldown chip sits (ABOVE the battery+stamina gauges, not over them)
 	ButtonColor = Color3.fromRGB(220, 210, 120),
 	Label = "DECOY",
 })
