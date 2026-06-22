@@ -17,6 +17,7 @@ local Names = table.freeze({
 	PlayerCaught = "PlayerCaught", -- a monster reached a player (payload: Player, species string); DownedService decides down-vs-kill (and forwards the species so the jumpscare shows the right monster), so MonsterService stays out of player-life logic
 	RoundEnded = "RoundEnded", -- a round just ended (payload: { [player] = {keys, escaped, survivalSeconds} }); EconomyService awards coins BEFORE RoundReset clears state
 	NoiseEvent = "NoiseEvent", -- a loud WORLD event happened at a point (payload: position Vector3); the near-blind monkey "hears" it and investigates -- e.g. a sprung trap pulls it toward the trap (TrapService fires this; MonsterService routes it into the monkey's senses)
+	MazeRebuilt = "MazeRebuilt", -- the runtime maze just re-carved + settled (no payload); MazeService is the PRODUCER (resets FIRST), and Key/Monster/etc. wait on this before re-arming so they never path against a half-built maze
 })
 
 local ServerSignals = {}
