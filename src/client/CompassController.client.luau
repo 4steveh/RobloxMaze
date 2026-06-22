@@ -176,6 +176,22 @@ RunService.RenderStepped:Connect(function()
 		arrow.Visible = false
 		return
 	end
+
+	-- Distance-fade each key beacon (search-as-exposure): a near key reads full, a far one shrinks to
+	-- BeaconMinSize + dims, so the beacon gives a ROUGH direction in the random maze rather than a
+	-- precise hand-holding line you can safely run down. (Wires the previously-dead Config fields.)
+	for keyPart, bb in beacons do
+		if keyPart.Parent then
+			local frac = math.clamp((keyPart.Position - rootPart.Position).Magnitude / C.MaxBeaconDistance, 0, 1)
+			local sz = C.BeaconSize + (C.BeaconMinSize - C.BeaconSize) * frac
+			local dot = bb:FindFirstChild("Dot")
+			if dot then
+				dot.Size = UDim2.fromOffset(sz, sz)
+				dot.BackgroundTransparency = frac * 0.5 -- fade toward, never fully gone (still a hint)
+			end
+		end
+	end
+
 	local key = nearestKey(rootPart.Position)
 	arrow.Visible = key ~= nil
 	if key then

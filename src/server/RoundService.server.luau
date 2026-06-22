@@ -28,7 +28,11 @@ local roundEnded = ServerSignals.get(ServerSignals.Names.RoundEnded)
 
 local resetting = false
 local roundGen = 0 -- bumped each reset, so a straggler win from an older round can't re-reset
-local roundStartClock = os.clock() -- for the per-player survival time in the round summary
+local roundStartClock = os.clock() -- when the current round began
+-- When each player's survival-for-THIS-round clock started: their join time, or the round start --
+-- whichever is LATER. So a mid-round joiner is credited only the time they were actually present,
+-- not the whole round (the survival-coin floor is per-second; full-round credit over-pays joiners).
+local joinClock = {} -- [player] = os.clock()
 
 local function beginNewRound()
 	if resetting then
@@ -44,11 +48,12 @@ local function beginNewRound()
 	local summaries = {}
 	local now = os.clock()
 	for _, player in Players:GetPlayers() do
+		local started = math.max(roundStartClock, joinClock[player] or roundStartClock)
 		table.insert(summaries, {
 			player = player,
 			keys = player:GetAttribute(Attributes.KeyCount) or 0,
 			escaped = player:GetAttribute(Attributes.GameState) == Enums.GameState.Won,
-			survivalSeconds = now - roundStartClock,
+			survivalSeconds = now - started,
 		})
 	end
 	roundEnded:Fire(summaries)
@@ -72,6 +77,7 @@ local function onWin()
 end
 
 local function watch(player: Player)
+	joinClock[player] = os.clock()
 	player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
 		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won and not resetting then
 			task.spawn(onWin)
@@ -80,6 +86,23 @@ local function watch(player: Player)
 end
 
 Players.PlayerAdded:Connect(watch)
+Players.PlayerRemoving:Connect(function(player)
+	joinClock[player] = nil
+end)
 for _, player in Players:GetPlayers() do
 	watch(player)
+end
+
+-- A round nobody escapes still ENDS: after MaxRoundSeconds with no win, force a fresh round so the
+-- maze re-carves and coins pay out (the never-worth-zero floor). beginNewRound guards re-entry, and
+-- the summaries carry escaped=false. 0 disables the safety net.
+if R.MaxRoundSeconds and R.MaxRoundSeconds > 0 then
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			if not resetting and os.clock() - roundStartClock >= R.MaxRoundSeconds then
+				beginNewRound()
+			end
+		end
+	end)
 end
