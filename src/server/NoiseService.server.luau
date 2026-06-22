@@ -21,6 +21,10 @@ local Enums = require(ReplicatedStorage.Enums)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
 
 local N = Config.Noise
+-- Cap the SMOOTHING dt (not the speed dt): after a server hitch we still want the true average speed
+-- (delta / real elapsed), but we must not let `dt * rate` saturate to 1 and snap NoiseLevel straight
+-- to target -- that would defeat the deliberate rise-fast/decay-slow "commit to quiet" design.
+local maxSmoothDt = Config.Spatial.PollInterval * N.MaxTickDtFactor
 
 -- Map measured planar speed (studs/s) -> target noise (0..1), piecewise so each tier
 -- (sprint / walk / creep / idle) is tunable independently.
@@ -85,9 +89,10 @@ local function processPlayer(player: Player, dt: number)
 		end
 		target = targetNoise(speed)
 	end
-	-- Asymmetric smoothing: rise fast (instantly loud), decay slow (commit to quiet).
+	-- Asymmetric smoothing: rise fast (instantly loud), decay slow (commit to quiet). The smoothing
+	-- dt is capped (a hitch shouldn't snap straight to target); the speed above used the real dt.
 	local rate = if target > current then N.RisePerSecond else N.DecayPerSecond
-	local value = current + (target - current) * math.min(dt * rate, 1)
+	local value = current + (target - current) * math.min(math.min(dt, maxSmoothDt) * rate, 1)
 	if value < 0.001 then
 		value = 0
 	end
