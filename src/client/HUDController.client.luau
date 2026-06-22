@@ -62,6 +62,8 @@ pipsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 pipsLayout.Parent = pipsRow
 
 local pips = {}
+local pipStrokes = {} -- parallel: each pip's UIStroke, flashed on fill
+local pipScales = {} -- parallel: each pip's UIScale, popped on fill
 for i = 1, requiredKeys do
 	local pip = Instance.new("Frame")
 	pip.Name = "Pip" .. i
@@ -78,6 +80,12 @@ for i = 1, requiredKeys do
 	stroke.Thickness = HUD.PipStrokeThickness
 	stroke.Parent = pip
 
+	-- A UIScale the pickup pop overshoots (the row is center-aligned, so a single pip popping
+	-- stays balanced); reset to 1 each round.
+	local scale = Instance.new("UIScale")
+	scale.Scale = 1
+	scale.Parent = pip
+
 	-- Art hook: drop a key/collectible icon image here later.
 	local icon = Instance.new("ImageLabel")
 	icon.Name = "Icon"
@@ -90,12 +98,44 @@ for i = 1, requiredKeys do
 
 	pip.Parent = pipsRow
 	pips[i] = pip
+	pipStrokes[i] = stroke
+	pipScales[i] = scale
 end
 
 local function refreshPips()
 	for i, pip in pips do
 		pip.BackgroundColor3 = if i <= keyCount then HUD.PipFilledColor else HUD.PipEmptyColor
 	end
+end
+
+-- Make a just-collected key feel TACTILE: the filled pip overshoots in scale (Back ease) and its
+-- stroke flashes bright, then both settle. Render-only juice; the fill colour comes from refreshPips.
+local function popPip(i)
+	local scale, stroke = pipScales[i], pipStrokes[i]
+	if not (scale and stroke) then
+		return
+	end
+	-- Punch up fast, settle back with a Back overshoot.
+	scale.Scale = 1
+	TweenService
+		:Create(scale, TweenInfo.new(HUD.PipPopSeconds * 0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Scale = HUD.PipPopScale,
+		})
+		:Play()
+	task.delay(HUD.PipPopSeconds * 0.35, function()
+		TweenService
+			:Create(scale, TweenInfo.new(HUD.PipPopSeconds * 0.65, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Scale = 1,
+			})
+			:Play()
+	end)
+	-- Stroke flash: thicken + brighten, then ease back to the resting stroke.
+	stroke.Thickness = HUD.PipPopStrokeThickness
+	stroke.Color = HUD.PipPopStrokeColor
+	TweenService:Create(stroke, TweenInfo.new(HUD.PipPopSeconds), {
+		Thickness = HUD.PipStrokeThickness,
+		Color = HUD.PipStrokeColor,
+	}):Play()
 end
 
 -- Battery gauge ---------------------------------------------------------------
@@ -144,6 +184,15 @@ staminaFillCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
 staminaFillCorner.Parent = staminaFill
 staminaFill.Parent = staminaBack
 
+-- Exhaustion flash: a stroke on the gauge (the render loop owns the FILL colour every frame, so a
+-- fill-colour flash would be overwritten -- the stroke is ours to flash). Invisible at rest.
+local staminaStroke = Instance.new("UIStroke")
+staminaStroke.Color = HUD.ExhaustColor
+staminaStroke.Thickness = 0
+staminaStroke.Transparency = 1
+staminaStroke.Parent = staminaBack
+local staminaBasePos = staminaBack.Position
+
 -- Exit arrow (placeholder glyph; swap for an arrow image later) ----------------
 local arrow = Instance.new("TextLabel")
 arrow.Name = "ExitArrow"
@@ -182,7 +231,8 @@ winIcon.Parent = winOverlay
 local winText = Instance.new("TextLabel")
 winText.Name = "Label"
 winText.AnchorPoint = Vector2.new(0.5, 0)
-winText.Position = UDim2.fromScale(0.5, 0.58)
+local winTextBasePos = UDim2.fromScale(0.5, 0.58)
+winText.Position = winTextBasePos
 winText.Size = UDim2.fromOffset(HUD.WinTextWidth, HUD.WinTextSize + HUD.WinTextPadding)
 winText.BackgroundTransparency = 1
 winText.Font = Enum.Font.GothamBold
@@ -190,6 +240,53 @@ winText.TextSize = HUD.WinTextSize
 winText.Text = "ESCAPED"
 winText.TextColor3 = HUD.WinIconColor
 winText.Parent = winOverlay
+
+-- A full-screen relief BLOOM that washes over the win the instant it lands, then clears -- it sits
+-- above the overlay (ZIndex) so the dark panel + icon ease in beneath the fading light.
+local winFlash = Instance.new("Frame")
+winFlash.Name = "WinFlash"
+winFlash.Size = UDim2.fromScale(1, 1)
+winFlash.BackgroundColor3 = HUD.WinFlashColor
+winFlash.BackgroundTransparency = 1
+winFlash.ZIndex = 10
+winFlash.Visible = false
+winFlash.Parent = gui
+
+-- The escape is the run's PAYOFF, so it arrives as a sequence (bloom -> overlay eases in -> icon
+-- pops with an overshoot -> label rises in), not a hard Visible flip. The win jingle already lands
+-- via StingerController on the same GameWon remote. Render-only.
+local function playWinCelebration()
+	winFlash.Visible = true
+	winFlash.BackgroundTransparency = 0
+	TweenService:Create(
+		winFlash,
+		TweenInfo.new(HUD.WinFlashSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 1 }
+	):Play()
+
+	winOverlay.Visible = true
+	winOverlay.BackgroundTransparency = 1
+	TweenService:Create(
+		winOverlay,
+		TweenInfo.new(HUD.WinOverlayFadeSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = HUD.WinBackTransparency }
+	):Play()
+
+	winIcon.Size = UDim2.fromOffset(0, 0) -- pop up from nothing (Back overshoot)
+	TweenService:Create(
+		winIcon,
+		TweenInfo.new(HUD.WinIconPopSeconds, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Size = UDim2.fromOffset(HUD.WinIconSize, HUD.WinIconSize) }
+	):Play()
+
+	winText.Position = winTextBasePos + UDim2.fromOffset(0, HUD.WinTextRisePixels)
+	winText.TextTransparency = 1
+	TweenService:Create(
+		winText,
+		TweenInfo.new(HUD.WinTextRiseSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Position = winTextBasePos, TextTransparency = 0 }
+	):Play()
+end
 
 -- Transient feedback toast (key pickup / locked door) --------------------------
 local toast = Instance.new("TextLabel")
@@ -218,6 +315,28 @@ local function showToast(text, color, seconds)
 		if mine == toastToken then
 			TweenService:Create(toast, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
 		end
+	end)
+end
+
+-- Sprint EXHAUSTION feedback. When stamina empties mid-chase the server cuts your speed, which can
+-- read as "Shift stopped working". A one-shot jolt + "OUT OF BREATH" toast at the moment of
+-- exhaustion tells the player WHY they slowed. Fires once per drain; re-arms only after stamina
+-- climbs back to usable (the render loop edge-detects). Render-only.
+local exhausted = false
+local function triggerExhaust()
+	showToast(HUD.ExhaustText, HUD.ExhaustColor, HUD.ExhaustToastSeconds)
+	staminaStroke.Thickness = 3
+	staminaStroke.Transparency = 0
+	TweenService:Create(staminaStroke, TweenInfo.new(0.4), { Thickness = 0, Transparency = 1 }):Play()
+	task.spawn(function()
+		local step = HUD.ExhaustShakeTime / 4
+		for _ = 1, 2 do
+			staminaBack.Position = staminaBasePos + UDim2.fromOffset(HUD.ExhaustShakePixels, 0)
+			task.wait(step)
+			staminaBack.Position = staminaBasePos + UDim2.fromOffset(-HUD.ExhaustShakePixels, 0)
+			task.wait(step)
+		end
+		staminaBack.Position = staminaBasePos
 	end)
 end
 
@@ -253,12 +372,12 @@ end)
 
 keyCollectedRemote.OnClientEvent:Connect(function(count)
 	keyCollectSound:Play()
-	showToast(string.format("KEY %d/%d", count or keyCount, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
+	count = count or keyCount
+	showToast(string.format("KEY %d/%d", count, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
+	popPip(count) -- the pip that just filled (index == the new team total)
 end)
 
-gameWonRemote.OnClientEvent:Connect(function()
-	winOverlay.Visible = true
-end)
+gameWonRemote.OnClientEvent:Connect(playWinCelebration)
 
 -- A teammate reached the exit (shared round): the escapee gets the win overlay above;
 -- everyone else sees WHO got out, so the round reset reads as their escape, not a yank.
@@ -274,10 +393,11 @@ exitOpenedRemote.OnClientEvent:Connect(function(escapeeName)
 	)
 end)
 
--- A new round (GameState back to Playing) hides the win overlay.
+-- A new round (GameState back to Playing) hides the win overlay + bloom.
 player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
 	if player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won then
 		winOverlay.Visible = false
+		winFlash.Visible = false
 	end
 end)
 
@@ -320,6 +440,14 @@ RunService.RenderStepped:Connect(function()
 	local sfrac = math.clamp(stamina / Config.Player.StaminaMax, 0, 1)
 	staminaFill.Size = UDim2.fromScale(sfrac, 1)
 	staminaFill.BackgroundColor3 = if sfrac <= 0.25 then HUD.StaminaLowColor else HUD.StaminaFillColor
+
+	-- Exhaustion edge-detect: fire once as stamina bottoms out; re-arm once it recovers to usable.
+	if not exhausted and sfrac <= HUD.ExhaustFraction then
+		exhausted = true
+		triggerExhaust()
+	elseif exhausted and sfrac >= HUD.ExhaustRecoverFraction then
+		exhausted = false
+	end
 
 	-- Exit arrow: only once every key is collected; points toward the ExitDoor.
 	local showArrow = keyCount >= requiredKeys

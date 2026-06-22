@@ -265,6 +265,34 @@ Config.HUD = table.freeze({
 	WinTextWidth = 320, -- px
 	WinTextPadding = 8, -- px added to WinTextSize for the label height
 
+	-- Win CELEBRATION: the escape is the run's payoff, so it ARRIVES as a sequence (a bright
+	-- bloom -> the overlay eases in -> the icon pops with an overshoot -> the label rises in)
+	-- rather than a hard Visible flip. Render-only; the win jingle already lands via StingerController.
+	WinFlashColor = Color3.fromRGB(236, 255, 242), -- the relief bloom that washes in then clears
+	WinFlashSeconds = 0.55, -- seconds the bloom takes to fade to clear
+	WinOverlayFadeSeconds = 0.6, -- seconds the dark overlay eases in (under the bloom)
+	WinIconPopSeconds = 0.55, -- seconds the escaped icon scales up (Back overshoot from 0)
+	WinTextRiseSeconds = 0.5, -- seconds the ESCAPED label fades + rises into place
+	WinTextRisePixels = 26, -- px the label travels up as it fades in
+
+	-- Key pip POP: a collected key should feel TACTILE, so the just-filled pip overshoots in
+	-- scale and flashes its stroke bright, then settles -- not a flat BackgroundColor flip.
+	PipPopScale = 1.5, -- the filled pip overshoots to this x its size...
+	PipPopSeconds = 0.34, -- ...then Back-eases back to 1x over this long
+	PipPopStrokeColor = Color3.fromRGB(255, 246, 190), -- the brief bright stroke flash on fill
+	PipPopStrokeThickness = 4, -- px the stroke thickens to during the flash
+
+	-- Sprint EXHAUSTION feedback: when stamina empties mid-chase the server cuts your speed, which
+	-- reads as "Shift stopped working". A one-shot jolt + toast at the moment of exhaustion tells the
+	-- player WHY they slowed. Fires once per drain; re-arms only after stamina climbs back to usable.
+	ExhaustFraction = 0.02, -- stamina/Max at/below which you've JUST exhausted
+	ExhaustRecoverFraction = 0.3, -- stamina/Max you must climb back to before another exhaust can fire
+	ExhaustText = "OUT OF BREATH",
+	ExhaustToastSeconds = 1.1, -- the micro-toast hold time
+	ExhaustColor = Color3.fromRGB(235, 120, 70), -- a winded amber (distinct from the red danger toast)
+	ExhaustShakePixels = 7, -- px the stamina gauge jolts on exhaustion
+	ExhaustShakeTime = 0.3, -- seconds of the jolt
+
 	-- "Locked door" rattle (nothing punishing)
 	LockedShakePixels = 8, -- px nudge amplitude
 	LockedShakeTime = 0.35, -- seconds total
@@ -890,6 +918,34 @@ Config.Chase = table.freeze({
 
 	EyeGlowBrightness = 4.0, -- a hunting monster's EyeGlow brightness at full threat (base ~0.7)
 	EyeGlowRange = 13, -- ...and its range (base ~7)
+})
+
+-- SafeRoom "exhale" FX (the relief counterpart to the chase grade) ----------------
+-- A safe room is the only sanctuary, but entering one was nearly invisible (just a reverb
+-- swap). SafeRoomFXController gives crossing the threshold a FELT arrival: a warm grade blooms
+-- in then settles to a gentle steady warmth while you're inside, a soft "SAFE" cue appears, and
+-- it all fades on leaving. Render-only, off the server-authoritative SafeRoom enter/leave remotes
+-- (the client never detects occupancy itself); its OWN ColorCorrection, so the place grade and the
+-- ChaseGrade are untouched. The inverse of Config.Chase: warmth + a lift, not desaturation + red.
+Config.SafeRoomFX = table.freeze({
+	TintColor = Color3.fromRGB(255, 226, 170), -- a warm hearth tint (vs the chase's sickly red)
+	BloomTint = 1.0, -- TintColor weight at the entry bloom's peak (settles to HoldTint)
+	HoldTint = 0.35, -- the gentle steady warmth held while inside
+	Brightness = 0.05, -- a slight lift at the bloom peak (the lights-come-up exhale)
+	Saturation = 0.12, -- a touch more colour at the bloom peak (the world feels alive again)
+	BloomSeconds = 0.5, -- seconds the warm grade blooms IN on entry
+	SettleSeconds = 1.2, -- seconds it eases from the bloom peak down to the steady hold
+	FadeSeconds = 0.6, -- seconds it fades back to neutral on leaving
+
+	-- A one-shot "SAFE" toast on entry (centered, brief), and a soft warm screen-edge glow held
+	-- while inside so the sanctuary reads at a glance even with the grade settled low.
+	ToastText = "SAFE",
+	ToastColor = Color3.fromRGB(255, 232, 180),
+	ToastSeconds = 1.4,
+	ToastYScale = 0.4, -- screen-height fraction for the SAFE toast (below the key toast at 0.30)
+	GlowColor = Color3.fromRGB(255, 220, 160),
+	GlowThickness = 0.34, -- fraction of the screen each warm edge band spans
+	GlowHoldTransparency = 0.86, -- the steady edge-glow alpha while inside (subtle)
 })
 
 -- Audio -------------------------------------------------------------------------
