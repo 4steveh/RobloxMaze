@@ -24,9 +24,11 @@ local ServerSignals = require(script.Parent.ServerSignals)
 
 local R = Config.Round
 local roundReset = ServerSignals.get(ServerSignals.Names.RoundReset)
+local roundEnded = ServerSignals.get(ServerSignals.Names.RoundEnded)
 
 local resetting = false
 local roundGen = 0 -- bumped each reset, so a straggler win from an older round can't re-reset
+local roundStartClock = os.clock() -- for the per-player survival time in the round summary
 
 local function beginNewRound()
 	if resetting then
@@ -34,7 +36,25 @@ local function beginNewRound()
 	end
 	resetting = true
 	roundGen += 1
+
+	-- Award coins for the round that just ended, BEFORE roundReset clears KeyCount / GameState.
+	-- EconomyService listens; the summary captures end-of-round state.
+	-- An ARRAY with `player` as a VALUE (not a table keyed by the Player Instance): a BindableEvent
+	-- deep-copies its table args and does NOT preserve Instance KEYS, but Instance VALUES survive.
+	local summaries = {}
+	local now = os.clock()
+	for _, player in Players:GetPlayers() do
+		table.insert(summaries, {
+			player = player,
+			keys = player:GetAttribute(Attributes.KeyCount) or 0,
+			escaped = player:GetAttribute(Attributes.GameState) == Enums.GameState.Won,
+			survivalSeconds = now - roundStartClock,
+		})
+	end
+	roundEnded:Fire(summaries)
+
 	roundReset:Fire() -- each system resets its own state (keys, win, checkpoints, spawns, monsters)
+	roundStartClock = os.clock()
 	task.wait(R.ResetSettleSeconds)
 	resetting = false
 end

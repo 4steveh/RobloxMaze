@@ -636,6 +636,31 @@ Config.Radar = table.freeze({
 	Label = "RADAR",
 })
 
+-- Economy: end-of-round coin payout (the retention loop) --------------------------
+-- A run is NEVER worth zero -- you always bank the floor + per-key progress + capped
+-- survival, even on a loss. Escaping is the jackpot. Read by the pure Progression.computeAward.
+Config.Economy = table.freeze({
+	ParticipationFloor = 5, -- coins just for playing the round
+	KeyReward = 10, -- coins per key the team held at round end
+	EscapeBonus = 50, -- coins for reaching the exit
+	SurvivalPerSecond = 0.25, -- coins per second survived...
+	SurvivalCap = 240, -- ...capped at this many seconds (so camping isn't farmed)
+	ShopActionRateLimit = 0.2, -- min seconds between accepted ShopAction messages (anti-spam, hostile input)
+})
+
+-- Persistence: DataStore tuning (DataService is the only DataStore toucher) --------
+-- Coins + owned/equipped cosmetics persist per player. DataStore needs Studio's
+-- "Enable Studio Access to API Services" on a PUBLISHED experience to work in Studio;
+-- with it off, DataService degrades to in-memory only (the game still plays, just no save).
+Config.Persistence = table.freeze({
+	DataStoreName = "PlayerData_v1", -- bump the suffix to wipe/migrate; never silently change the schema under v1
+	AutosaveInterval = 120, -- seconds between background saves of dirty profiles
+	MaxRetries = 4, -- DataStore call retries on failure...
+	RetryBaseDelay = 1, -- ...with exponential backoff starting here (seconds)
+	SessionLockStaleSeconds = 1200, -- a session lock older than this is treated as abandoned (crash recovery)
+	BindToCloseBudgetSeconds = 25, -- max seconds to spend flushing saves on server shutdown
+})
+
 -- Feedback: legible event messaging (toasts + win/caught copy) --------------------
 Config.Feedback = table.freeze({
 	KeyToastSeconds = 2.0, -- "KEY 1/3" toast hold time

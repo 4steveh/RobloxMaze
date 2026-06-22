@@ -15,6 +15,7 @@ local RunService = game:GetService("RunService")
 local Names = table.freeze({
 	RoundReset = "RoundReset", -- a new round is beginning: re-spawn keys, reset state/monsters/spawns
 	PlayerCaught = "PlayerCaught", -- a monster reached a player (payload: Player); DownedService decides down-vs-kill, so MonsterService stays out of player-life logic
+	RoundEnded = "RoundEnded", -- a round just ended (payload: { [player] = {keys, escaped, survivalSeconds} }); EconomyService awards coins BEFORE RoundReset clears state
 })
 
 local ServerSignals = {}
