@@ -21,6 +21,7 @@ local Names = table.freeze({
 	ExitOpened = "ExitOpened", -- server -> ALL clients: a player escaped / the exit gate swung open (door-open SFX + "someone escaped" note for non-winners; payload: escapee name)
 	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught (payload: downed:boolean -- true = grabbed into the revivable DOWNED state, false/nil = killed → respawn; species:string -- which monster caught you, so the jumpscare shows the RIGHT creature). Drives the jumpscare.
 	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
+	HuntBegins = "HuntBegins", -- server -> ALL clients: the pre-round PEACE window just ended and the monsters are now hunting (no payload) -- drives a dread sting so the calm->hunt transition is FELT (else the peace window is invisible)
 	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
 	RoundSummary = "RoundSummary", -- server -> client: end-of-round results (payload: {coinsGained, total, keys, escaped}) -- drives the results panel
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
@@ -43,6 +44,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.ExitOpened,
 	Names.MonsterCaught,
 	Names.MonsterStateChanged,
+	Names.HuntBegins,
 	Names.TrapTriggered,
 	Names.RoundSummary,
 	Names.DataReady,

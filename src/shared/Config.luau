@@ -947,6 +947,8 @@ Config.Audio = table.freeze({
 		LockedThunkVolume = 0.65,
 		WinJingleId = "rbxassetid://9041792228", -- GameWon (Music bus)
 		WinJingleVolume = 0.75,
+		HuntBeginsId = "rbxassetid://1841353932", -- HuntBegins: the peace window ended (reuses the verified chase-sting id; Monster bus)
+		HuntBeginsVolume = 0.7,
 		JumpscareId = "rbxassetid://139306955269282", -- MonsterCaught (full-volume, ducks others)
 		JumpscareVolume = 1.0,
 	}),

@@ -35,6 +35,7 @@ monstersFolder.Parent = Workspace
 
 Remotes.init()
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
+local huntBeginsRemote = Remotes.get(Remotes.Names.HuntBegins) -- fired once when the peace window ends
 -- A catch hands the OUTCOME to DownedService (down vs kill) via this signal; MonsterService
 -- stays out of player-life logic (it only repels its rig home so it never camps the body).
 local playerCaughtSignal = ServerSignals.get(ServerSignals.Names.PlayerCaught)
@@ -404,6 +405,7 @@ spawnMonsters()
 -- so the round opens calm (the genre's calm->dread contrast). Set at boot for the first round and
 -- re-armed on every RoundReset.
 local peaceUntil = os.clock() + Config.Round.PeaceSeconds
+local prevPeace = true -- was the peace window active last tick? (so the peace->hunt transition fires once)
 
 -- New round: reset every rig (clear the FSM, send it home, brief dormancy) so no monster
 -- is left chasing a player from the round that just ended, and re-arm the peace window.
@@ -434,6 +436,11 @@ while true do
 	local speedMul = 1 + aggro * AGGRO.MaxSpeedBonus
 	-- Peace window: at round start every rig senses nothing (it roams but does not hunt).
 	local peace = now < peaceUntil
+	-- The calm->hunt transition: fire ONE dread sting to the whole lobby so the peace window is felt.
+	if prevPeace and not peace then
+		huntBeginsRemote:FireAllClients()
+	end
+	prevPeace = peace
 	-- Player-character list + the shared sight params, built ONCE per tick (not per rig).
 	local playerChars = {}
 	for _, player in Players:GetPlayers() do
