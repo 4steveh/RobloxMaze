@@ -244,6 +244,24 @@ Config.Monster = table.freeze({
 		ResetToPatrolOnCatch = true, -- on a catch, clear the FSM and send the rig home off the kill site
 		PostCatchDormantSeconds = 4, -- seconds after a catch the rig senses nothing -- overlaps the respawn window
 		NoKeySpawnRadius = 30, -- studs: KeySpots within this of any MonsterSpawn are skipped (no key in its lap)
+
+		-- Territory separation (the fix for "the two monsters shadow each other"). The bunny
+		-- roams the maze's PatrolPoints; the monkey GUARDS its nest (now the exit approach). To
+		-- stop the bunny wandering into the monkey's den and crowding the same corridor, patrol
+		-- nodes within this of ANY MonkeySpawn are dropped from the bunny's graph -- so the exit
+		-- region belongs to the monkey and the broad maze to the bunny. (MonsterService filters.)
+		NestExclusionRadius = 32, -- studs around a MonkeySpawn the bunny's patrol graph excludes
+		-- Patrol variety: the bunny picks RANDOMLY among the N nearest unvisited nodes rather than
+		-- always the single nearest, so its route varies round to round (the fix for "it patrols
+		-- the exact same spots"). 1 = the old deterministic nearest-node tour.
+		PatrolNodeChoices = 3,
+
+		-- World-noise events (a sprung trap, etc., via ServerSignals.NoiseEvent): a HEARING rig
+		-- (the monkey) within this range of the event investigates it -- so a careless trap-trip
+		-- actively summons the near-blind hunter (traps + the noise monkey become one system). The
+		-- event is delivered to each eligible rig ONCE; this is how long after it fires it stays
+		-- "hearable" (covers the poll cadence + a little slack). The deaf bunny never reacts.
+		NoiseEventReactSeconds = 1.5, -- seconds a fired noise event remains sensable
 	}),
 
 	-- Per-species behaviour + rig. The FSM reads (Shared U Species) as its `cfg` slice.
@@ -261,7 +279,7 @@ Config.Monster = table.freeze({
 			SearchDuration = 6, -- seconds spent searching the last-seen area before giving up
 			SearchWanderRadius = 12, -- studs the bunny pokes around the last-seen point while searching
 			CatchRadius = 5, -- distance to a player that counts as a catch (instant)
-			PatrolMemory = 2, -- patrol nodes remembered as "recently visited" so it tours, not ping-pongs
+			PatrolMemory = 4, -- patrol nodes remembered as "recently visited" so it tours widely, not ping-pongs (raised from 2 with the wider PatrolNodeChoices so routes vary)
 
 			-- Rig: the corrupted-mascot mesh (ServerStorage.Assets.<BodyAssetName>). It looms
 			-- taller than the collision box on purpose; pathfinding uses BodySize +
@@ -428,6 +446,14 @@ Config.Traps = table.freeze({
 	RearmSeconds = 3, -- seconds after firing/disarming before the trap can trigger again
 	NoiseOnTrigger = 1.0, -- spikes the victim's NoiseLevel when it fires (a sprung trap is LOUD)
 
+	-- Traps as a CHASE TOOL (the fix for "traps aren't part of anything"): an armed trap also
+	-- springs on a HUNTING monster that runs over it -- INSTANTLY (no telegraph; a monster doesn't
+	-- read warnings) -- freezing it so a chased player can bait a pursuer across one to escape. A
+	-- monster trip mid-windup also SPARES the player (the trap fires on the monster instead). Only
+	-- a hunting rig trips it, so a monster pacing its nest never stuns itself on a nearby trap.
+	MonsterTriggerRadius = 5, -- studs: a hunting rig within this of an armed trap springs it
+	MonsterStunSeconds = 2.6, -- seconds the tripped monster stands frozen (a real escape window)
+
 	-- Telegraph (always-visible, built into the placed marker): a red arrow + faint glow.
 	ArrowColor = Color3.fromRGB(190, 30, 30),
 	ArrowFlashColor = Color3.fromRGB(255, 70, 60), -- the brighter flash during wind-up
@@ -580,8 +606,9 @@ Config.Onboarding = table.freeze({
 	-- of text (Roblox's own FTUE guidance). Driven by the MonsterStateChanged remote.
 	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
 	AlertTip = "It HEARD you — slow down and move quietly",
-	-- Shown the first time you approach a floor trap, BEFORE you can step on it blind.
-	TrapTip = "⚠ The glowing RED marks on the floor are TRAPS — don't step on them",
+	-- Shown the first time you approach a floor trap, BEFORE you can step on it blind. Teaches
+	-- BOTH halves of the new trap design: avoid them yourself, but bait a chasing monster across one.
+	TrapTip = "⚠ Glowing RED floor marks are TRAPS — avoid them, but lure a chasing monster onto one",
 	TrapTipRadius = 16, -- studs: a trap within this (first time) triggers the warning tip
 	TipSeconds = 5, -- how long a tip holds before fading
 })
@@ -610,30 +637,50 @@ Config.TouchControls = table.freeze({
 	SprintIconImage = "", -- TODO: a run icon asset id
 })
 
--- Monster radar (so you can tell where the monsters are) -------------------------
--- A compact camera-relative radar (top-right): the player at center, a blip per monster
--- placed by bearing + clamped distance, colored by threat (hunting = alarming red, just
--- patrolling = dim). Reads each rig's replicated HRP + State (exploit-safe; no server trust).
--- Render-only -- the FlickerController-class client cosmetic.
+-- Monster radar (a SWEEPING sonar -- you get periodic, decaying pings, not a live feed) ----
+-- The old radar showed both monsters' EXACT live positions every frame, so you always knew
+-- where they were -- it killed the fear of the unknown. Now it's a rotating sonar SWEEP: a
+-- monster's blip is only refreshed when the sweep line passes its bearing, then it FADES, so
+-- between pings you see a stale "last known" mark -- a fast hunter's blip lags behind where it
+-- actually is. A calm (patrolling/searching) monster pings FAINT and fades FAST (a fleeting
+-- ghost you can't track); only a HUNTING monster pings bright and lingers long enough to read.
+-- Still reads each rig's replicated HRP + State (exploit-safe; no server trust). Render-only.
 Config.Radar = table.freeze({
 	Size = 156, -- px diameter of the radar disc
 	Margin = 20, -- px from the top-right corner
-	Range = 130, -- studs: a monster at/beyond this sits on the radar's edge
+	Range = 130, -- studs: a monster at/beyond this sits on the radar's edge (and out of sweep range)
 	BackgroundColor = Color3.fromRGB(10, 12, 16),
 	BackgroundTransparency = 0.35,
 	RingColor = Color3.fromRGB(70, 80, 95),
 	PlayerColor = Color3.fromRGB(150, 220, 255), -- the center dot (you)
 	BlipSize = 16, -- px (a hunting monster's blip; patrolling ones are drawn smaller)
 	-- Blips are tinted by SPECIES (mirroring each monster's eye-glow tell) so you can tell the
-	-- two apart, and made prominent by THREAT: a hunting monster is bright + full size, a
-	-- patrolling one is dim + small (visible so you can avoid it, but clearly less urgent).
+	-- two apart, and made prominent by THREAT.
 	BunnyBlipColor = Color3.fromRGB(210, 40, 40), -- the vision stalker (red eyes)
 	MonkeyBlipColor = Color3.fromRGB(250, 210, 60), -- the noise hunter (yellow eyes)
 	UnknownBlipColor = Color3.fromRGB(200, 200, 200),
-	HuntingTransparency = 0, -- a hunting monster's blip (Chase/Investigate/Alert)
-	IdleTransparency = 0.55, -- a patrolling/searching monster's blip (faint)
 	IdleSizeScale = 0.7, -- patrolling blips are this fraction of BlipSize
-	Label = "RADAR",
+	Label = "SONAR",
+
+	-- Sweep: a line rotates the dish; a blip only refreshes ("pings") as the line crosses it.
+	SweepSeconds = 3.2, -- seconds for one full rotation of the sweep line
+	SweepColor = Color3.fromRGB(120, 230, 150), -- the sonar sweep arm (sickly green)
+	SweepArmTransparency = 0.25, -- the sweep arm's opacity
+	-- A freshly pinged blip starts opaque and fades over its species' memory window. A HUNTING
+	-- monster lingers (you can roughly track it); a calm one fades before the next sweep (a ghost).
+	HuntFadeSeconds = 2.8, -- a hunting monster's blip fades over this (≈ most of a sweep -> trackable)
+	IdleFadeSeconds = 1.1, -- a patrolling/searching monster's blip fades fast (a fleeting contact)
+	MinPingTransparency = 0.0, -- alpha a blip is at the instant it's pinged (then decays to 1 = gone)
+
+	-- CHARGE cycle (the fix for "the radar is too easy -- you can ALWAYS see them"). The sonar is
+	-- NOT always on: it runs on a charge that drains while sweeping and refills while dark, so you
+	-- get an ACTIVE window then a BLIND window -- you must time your glances and survive the gaps
+	-- on your own senses. A charge ring + "RECHARGING" label tells you which phase you're in.
+	ActiveSeconds = 9, -- seconds the sonar sweeps on a full charge before it depletes
+	RechargeSeconds = 7, -- seconds it stays DARK (no blips) recharging from empty back to full
+	ChargeReadyFraction = 1.0, -- must recharge fully (1.0) before it reactivates (no flickering on/off)
+	DepletedColor = Color3.fromRGB(120, 70, 70), -- the ring/label tint while recharging (dim red)
+	RechargingLabel = "RECHARGING",
 })
 
 -- Economy: end-of-round coin payout (the retention loop) --------------------------

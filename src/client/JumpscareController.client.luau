@@ -17,6 +17,7 @@ local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
 local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
+local Attributes = require(ReplicatedStorage.Attributes)
 
 local player = Players.LocalPlayer
 local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
@@ -89,25 +90,31 @@ scream.Volume = Config.Audio.Stingers.JumpscareVolume
 scream.SoundGroup = AudioGroups.get("Master")
 scream.Parent = SoundService
 
-local function findMonsterRig()
+-- Find the rig to show in the scare: prefer the SPECIES that actually caught the player (so a
+-- bunny catch shows the bunny, a monkey catch shows the monkey), falling back to any built rig.
+local function findMonsterRig(species)
 	local monsters = Workspace:FindFirstChild(WorldFolders.Monsters)
 	if not monsters then
 		return nil
 	end
+	local fallback = nil
 	for _, rig in monsters:GetChildren() do
 		if rig:FindFirstChild("Body") then
-			return rig
+			fallback = fallback or rig
+			if species and rig:GetAttribute(Attributes.MonsterSpecies) == species then
+				return rig
+			end
 		end
 	end
-	return nil
+	return fallback
 end
 
-local function populateViewport()
+local function populateViewport(species)
 	local old = viewport:FindFirstChild("ScareModel")
 	if old then
 		old:Destroy()
 	end
-	local rig = findMonsterRig()
+	local rig = findMonsterRig(species)
 	if not rig then
 		return false
 	end
@@ -162,7 +169,7 @@ local scareToken = 0
 -- Payload `downed`: true = grabbed into the revivable DOWNED state (the DownedController
 -- HUD takes over — show only a SHORT scare, no "CAUGHT!"/countdown); false/nil = killed
 -- (the classic CAUGHT headline + respawn countdown).
-caughtRemote.OnClientEvent:Connect(function(downed)
+caughtRemote.OnClientEvent:Connect(function(downed, species)
 	scareToken += 1
 	local mine = scareToken
 	local killed = not downed
@@ -176,7 +183,7 @@ caughtRemote.OnClientEvent:Connect(function(downed)
 		AudioGroups.duck(bus, 0.0, total)
 	end
 
-	local hasFace = populateViewport()
+	local hasFace = populateViewport(species)
 	viewport.Visible = hasFace
 	flash.Visible = true
 	flash.BackgroundTransparency = 0.05

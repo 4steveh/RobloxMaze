@@ -9,6 +9,7 @@
 -- Won / RespawnGrace players, like the monsters. The client renders the flash + dart FX.
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -18,11 +19,49 @@ local Spatial = require(ReplicatedStorage.Spatial)
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local Enums = require(ReplicatedStorage.Enums)
+local WorldFolders = require(ReplicatedStorage.WorldFolders)
 local PlayerUtil = require(ReplicatedStorage.PlayerUtil)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 Remotes.init()
 local trapRemote = Remotes.get(Remotes.Names.TrapTriggered)
+local noiseSignal = ServerSignals.get(ServerSignals.Names.NoiseEvent) -- a sprung trap pulls the monkey
 local C = Config.Traps
+
+-- A monster is only TRIPPED by a trap while HUNTING (ran over it chasing a player) -- so a rig
+-- pacing its nest next to a trap never stuns itself. Mirrors the radar's "hunting" set.
+local HUNTING = {
+	[Enums.MonsterState.Chase] = true,
+	[Enums.MonsterState.Investigate] = true,
+	[Enums.MonsterState.Alert] = true,
+}
+
+local monstersFolder = nil
+local function getMonsters(): Instance?
+	if not (monstersFolder and monstersFolder.Parent) then
+		monstersFolder = Workspace:FindFirstChild(WorldFolders.Monsters)
+	end
+	return monstersFolder
+end
+
+-- A HUNTING rig standing on the trap (it ran over it mid-chase), or nil.
+local function huntingMonsterOn(part: BasePart): Model?
+	local folder = getMonsters()
+	if not folder then
+		return nil
+	end
+	for _, rig in folder:GetChildren() do
+		local root = rig:IsA("Model") and rig:FindFirstChild("HumanoidRootPart")
+		if
+			root
+			and HUNTING[rig:GetAttribute(Attributes.MonsterState)] == true
+			and Spatial.withinRange(root.Position, part.Position, C.MonsterTriggerRadius)
+		then
+			return rig
+		end
+	end
+	return nil
+end
 
 -- Ensure each trap carries a clearly-visible red danger glow (adopt an existing placed
 -- PointLight or create one), set bright from Config -- so a trap reads as DANGER, not decor,
@@ -65,11 +104,26 @@ local function fire(part, t, player: Player)
 	t.victim = nil
 	trapRemote:FireAllClients(part, "fire")
 	player:SetAttribute(Attributes.NoiseLevel, C.NoiseOnTrigger) -- a sprung trap is loud
+	-- ...and loud enough to draw the near-blind monkey to the TRAP itself (not the now-dead
+	-- victim): a careless trap-trip actively summons the hunter. MonsterService routes this to it.
+	noiseSignal:Fire(part.Position)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid and humanoid.Health > 0 then
 		humanoid.Health = 0 -- -> SpawnService checkpoint respawn (no jumpscare; it's a trap)
 	end
+end
+
+-- Spring on a MONSTER instead: freeze it (StunnedUntil; MonsterService reads it and stands the rig
+-- still) and play the same fire FX, then cool down. No death, no noise -- this is the player's
+-- escape tool: bait a pursuer across the trap to open a gap. The trip is INSTANT (no telegraph --
+-- a monster doesn't read warnings), and it also cancels any player wind-up (the bait spares you).
+local function fireOnMonster(part, t, rig)
+	t.state = "cooldown"
+	t.cooldownUntil = os.clock() + C.RearmSeconds
+	t.victim = nil
+	rig:SetAttribute(Attributes.MonsterStunnedUntil, Workspace:GetServerTimeNow() + C.MonsterStunSeconds)
+	trapRemote:FireAllClients(part, "fire")
 end
 
 -- Per-trap state-machine step, factored out so it can be pcall-isolated: a throw on
@@ -83,6 +137,12 @@ local function processTrap(part, t, now)
 			t.state = "armed"
 		end
 	elseif t.state == "armed" then
+		-- A hunting monster on the trap springs it INSTANTLY -- the lure (checked before players).
+		local rig = huntingMonsterOn(part)
+		if rig then
+			fireOnMonster(part, t, rig)
+			return
+		end
 		for _, player in Players:GetPlayers() do
 			if eligible(player) then
 				local hrp = PlayerUtil.livingRootPart(player)
@@ -96,6 +156,13 @@ local function processTrap(part, t, now)
 			end
 		end
 	elseif t.state == "windup" then
+		-- A monster reaching the trap mid-windup fires on the MONSTER and SPARES the player (the
+		-- bait worked: you ran across, it followed, the trap took it instead of you).
+		local rig = huntingMonsterOn(part)
+		if rig then
+			fireOnMonster(part, t, rig)
+			return
+		end
 		local player = t.victim
 		local hrp = player and eligible(player) and PlayerUtil.livingRootPart(player)
 		local stillIn = hrp ~= nil and Spatial.withinRange(hrp.Position, part.Position, C.TriggerRadius)

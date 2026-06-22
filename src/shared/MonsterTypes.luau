@@ -28,6 +28,11 @@ export type Sensed = {
 	patrolNodes: { Vector3 },
 	homePosition: Vector3,
 	players: { PlayerSense },
+	-- A one-shot WORLD noise event the rig should investigate THIS tick (a sprung trap, etc.).
+	-- The near-blind monkey reacts to it like a heard player; the deaf bunny ignores it.
+	-- MonsterService delivers it to a hearing rig once per event, so the FSM can treat it as a
+	-- fresh transition without it re-firing every tick.
+	noiseEvent: Vector3?,
 }
 
 -- An FSM's decision for this tick: where to move, how fast, whether it caught, and

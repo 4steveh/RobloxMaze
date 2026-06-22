@@ -19,7 +19,7 @@ local Names = table.freeze({
 	GameWon = "GameWon", -- server -> client: this player reached the exit with enough keys
 	ExitLocked = "ExitLocked", -- server -> client: at the exit without enough keys (brief feedback)
 	ExitOpened = "ExitOpened", -- server -> ALL clients: a player escaped / the exit gate swung open (door-open SFX + "someone escaped" note for non-winners; payload: escapee name)
-	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught (payload: downed:boolean -- true = grabbed into the revivable DOWNED state, false/nil = killed → respawn). Drives the jumpscare.
+	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught (payload: downed:boolean -- true = grabbed into the revivable DOWNED state, false/nil = killed → respawn; species:string -- which monster caught you, so the jumpscare shows the RIGHT creature). Drives the jumpscare.
 	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
 	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
 	RoundSummary = "RoundSummary", -- server -> client: end-of-round results (payload: {coinsGained, total, keys, escaped}) -- drives the results panel

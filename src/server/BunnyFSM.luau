@@ -26,6 +26,7 @@ export type Config = {
 	SearchWanderRadius: number,
 	WaypointReachedDistance: number,
 	PatrolMemory: number,
+	PatrolNodeChoices: number,
 }
 
 -- The bunny's full FSM state -- a superset of MonsterTypes.FSMState (`name`,
@@ -65,11 +66,12 @@ local function nearestNode(nodes: { Vector3 }, from: Vector3, exclude: Vector3?,
 	return best
 end
 
--- Nearest node not within reach of any recently-visited node, so the bunny tours
--- the maze. Falls back to the nearest node other than the most-recent if every
--- node is recent (few-node layouts).
+-- Pick the next patrol node: gather every node NOT recently visited, then choose RANDOMLY
+-- among the `PatrolNodeChoices` nearest of them -- so the bunny tours unpredictably instead of
+-- always tracing the identical single-nearest route (the "it patrols the exact same spots" fix).
+-- Falls back to the nearest non-most-recent node when every node is recent (few-node layouts).
 local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vector3 }, cfg: Config): Vector3?
-	local best, bestDist = nil, math.huge
+	local candidates = {}
 	for _, node in nodes do
 		local isRecent = false
 		for _, r in recent do
@@ -79,16 +81,17 @@ local function nextPatrolNode(nodes: { Vector3 }, from: Vector3, recent: { Vecto
 			end
 		end
 		if not isRecent then
-			local d = flatDistance(node, from)
-			if d < bestDist then
-				best, bestDist = node, d
-			end
+			table.insert(candidates, node)
 		end
 	end
-	if best == nil then
-		best = nearestNode(nodes, from, recent[#recent], cfg)
+	if #candidates == 0 then
+		return nearestNode(nodes, from, recent[#recent], cfg)
 	end
-	return best
+	table.sort(candidates, function(a, b)
+		return flatDistance(a, from) < flatDistance(b, from)
+	end)
+	local pool = math.min(#candidates, math.max(1, cfg.PatrolNodeChoices))
+	return candidates[math.random(pool)]
 end
 
 -- Nearest player flagged visible this tick, or nil.
