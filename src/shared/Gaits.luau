@@ -33,9 +33,27 @@ export type BunnyParams = {
 	HeadBob: number,
 	IdleBreathHz: number,
 	IdleBreathAmp: number,
+	FootfallDip: number,
+	WalkLean: number,
 }
 
 local TAU = math.pi * 2
+
+-- A natural foot STRIDE (the anti-slide fix for "feet skate / it's a skin, not a creature"): the
+-- planted foot is held during STANCE and swept BACK to match the body's forward travel (so it does
+-- not slide), then SWUNG forward quickly during SWING. `lp` = the limb's phase (0..1); returns the
+-- fore/aft angle (positive = forward, matching the rig's -Z). Same amplitude as the old sine, better
+-- shape. (Single-part rigid legs can't bend a knee, so this is the best a hip-only joint can do.)
+local STANCE = 0.6 -- fraction of the cycle the foot is planted (vs swinging)
+local function stride(lp: number, amp: number): number
+	lp = lp % 1
+	if lp < STANCE then
+		-- stance: foot planted, sweeps from forward(+amp) to back(-amp) as the body moves over it
+		return amp * (1 - 2 * (lp / STANCE))
+	end
+	-- swing: foot returns from back(-amp) to forward(+amp), quicker (the step)
+	return amp * (2 * ((lp - STANCE) / (1 - STANCE)) - 1)
+end
 
 -- The bunny is the corrupted BIPEDAL mascot, so it HOPS as one body: a single hop
 -- arc per `phase` cycle (planted at phase 0/1, airborne apex at 0.5). `move` (0..1)
@@ -46,34 +64,41 @@ function Gaits.bunny(phase: number, clock: number, w: Weights, p: BunnyParams): 
 	local move = math.clamp(w.move, 0, 1)
 	local chase = math.clamp(w.chase, 0, 1)
 	local idle = 1 - move
+	local walk = 1 - chase
 
-	-- Vertical: a LOW creeping walk-bob at patrol, swelling to the full hop arc as the bunny
-	-- COMMITS to a lunge (chase). The arc growing into a hop is itself a "it's coming" tell.
-	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0
-	local arcScale = p.WalkArcScale + (1 - p.WalkArcScale) * chase
-	local hopY = arc * p.HopHeight * arcScale * move
-	local surge = -p.ForwardSurge * arc * arcScale * move -- -Z forward (little lunge while walking)
-	local pitch = p.HopPitch * math.sin(phase * TAU) * move
+	-- Vertical: the WALK now carries WEIGHT -- the body DROPS on each footfall (2 dips per stride =
+	-- mass + impact), instead of floating at a constant height (the "it's a skin gliding" tell). The
+	-- CHASE swells into the single committed-lunge HOP arc. A forward LEAN sells it as a creature
+	-- pushing into its motion (deeper while hunting).
+	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0, one hop per stride
+	local hopY = arc * p.HopHeight * chase * move -- the committed-lunge hop (chase only)
+	local footfall = -p.FootfallDip * (1 - math.cos(phase * 2 * TAU)) * 0.5 * walk * move -- weight, 2/stride
+	local surge = -p.ForwardSurge * arc * chase * move
+	local hopPitch = p.HopPitch * math.sin(phase * TAU) * chase * move
+	local lean = p.WalkLean * (0.6 + 0.4 * chase) * move -- forward lean (positive), deeper hunting
 	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
 
-	-- Legs: ALTERNATE (a slow, methodical walk -- legs half a cycle apart) when calm, then
-	-- SYNCHRONIZE into the both-legs HOP (extend/push at the plant, tuck at the apex) as the
-	-- chase weight rises. Arms swing; the head bobs. All swing real mesh limbs on the rig.
+	-- Legs: an ANTI-SLIDE stride at the walk (planted foot sweeps back, no skate -- half a cycle
+	-- apart) synchronizing into the both-legs HOP (extend at the plant, tuck at the apex) as chase
+	-- rises. Arms COUNTER-swing the opposite leg (contralateral, like a real biped) at the walk.
 	local legHop = -p.LegExtend * math.cos(phase * TAU) -- both together (the hop)
-	local legWalkL = p.LegExtend * p.WalkLegScale * math.sin(phase * TAU)
-	local legWalkR = p.LegExtend * p.WalkLegScale * math.sin((phase + 0.5) * TAU)
-	local legL = (legWalkL + (legHop - legWalkL) * chase) * move
-	local legR = (legWalkR + (legHop - legWalkR) * chase) * move
-	local armA = p.ArmSwing * math.sin(phase * TAU) * move
+	local legWalkL = stride(phase, p.LegExtend * p.WalkLegScale)
+	local legWalkR = stride(phase + 0.5, p.LegExtend * p.WalkLegScale)
+	local legL = (legWalkL * walk + legHop * chase) * move
+	local legR = (legWalkR * walk + legHop * chase) * move
+	local armHop = p.ArmSwing * math.sin(phase * TAU)
+	local armL = (-stride(phase + 0.5, p.ArmSwing) * 0.7 * walk + armHop * chase) * move -- counters LegL
+	local armR = (-stride(phase, p.ArmSwing) * 0.7 * walk + armHop * chase) * move -- counters LegR
 	local headA = math.sin(phase * TAU + 1.0) * p.HeadBob * move
 
 	return {
-		Body = CFrame.new(0, hopY + breath, surge) * CFrame.Angles(pitch, 0, 0),
-		CHead = CFrame.Angles(headA, 0, 0),
+		-- Counter the body lean on the head so it stays up and forward (looking where it's going).
+		Body = CFrame.new(0, hopY + footfall + breath, surge) * CFrame.Angles(hopPitch + lean, 0, 0),
+		CHead = CFrame.Angles(headA - lean * 0.5, 0, 0),
 		LegL = CFrame.Angles(legL, 0, 0),
 		LegR = CFrame.Angles(legR, 0, 0),
-		ArmL = CFrame.Angles(armA, 0, 0),
-		ArmR = CFrame.Angles(armA, 0, 0),
+		ArmL = CFrame.Angles(armL, 0, 0),
+		ArmR = CFrame.Angles(armR, 0, 0),
 	}
 end
 
@@ -102,6 +127,8 @@ export type MonkeyParams = {
 	IdleBreathAmp: number,
 	IdleScanSpeed: number,
 	IdleScanAmp: number,
+	FootfallDip: number,
+	WalkLean: number,
 }
 
 -- The monkey is an articulated primate doing a 4-beat BOUNDING gallop: the front pair
@@ -112,28 +139,36 @@ function Gaits.monkey(phase: number, clock: number, w: Weights, p: MonkeyParams)
 	local move = math.clamp(w.move, 0, 1)
 	local chase = math.clamp(w.chase, 0, 1)
 	local idle = 1 - move
+	local walk = 1 - chase
 
-	-- WHOLE-BODY GALLOP (the live path -- the monkey is the gorilla mesh on one `Body`
-	-- joint). One suspension arc per stride: the body leaps up + forward (feet off the
-	-- floor = the anti-glide), the spine rocks fore/aft, with a loping roll and a hunch
-	-- that deepens while hunting. Flatter + more horizontal in a chase.
+	-- WALK: a weighted 4-beat walk -- the torso DROPS on each footfall (mass, not a flat glide) and
+	-- the limbs use an ANTI-SLIDE stride. CHASE: the single suspension GALLOP arc (the bounding leap,
+	-- feet off the floor). A base forward hunch + walk lean sell it as a creature, not a skin.
 	local arc = math.sin(phase * math.pi) -- 0 -> 1 -> 0, one suspension per stride
 	local gallopH = p.GallopHeight * (1 - chase * (1 - p.GallopChaseScale))
-	local bobY = arc * gallopH * move
-	local surge = -p.GallopSurge * arc * move -- -Z is forward
-	local rock = p.GallopPitch * math.sin(phase * TAU) * move -- spine rock fore/aft
-	local hunch = p.GallopHunch * (0.4 + 0.6 * chase) * move
-	local roll = math.sin(phase * TAU) * p.GallopRoll * move
+	local bobY = arc * gallopH * chase * move -- the gallop suspension (chase)
+	local footfall = -p.FootfallDip * (1 - math.cos(phase * 2 * TAU)) * 0.5 * walk * move -- walk weight
+	local surge = -p.GallopSurge * arc * chase * move -- -Z is forward
+	local rock = p.GallopPitch * math.sin(phase * TAU) * chase * move -- spine rock fore/aft
+	local hunch = (p.GallopHunch * (0.4 + 0.6 * chase) + p.WalkLean * walk) * move
+	local roll = math.sin(phase * TAU) * p.GallopRoll * chase * move
 	local breath = math.sin(clock * TAU * p.IdleBreathHz) * p.IdleBreathAmp * idle
 
-	-- Articulated-limb fallback (no-mesh primate): arms lead, legs follow half a cycle,
-	-- a small L/R desync; head bob/thrust + scan; tail sway/lash. Ignored on the mesh rig
-	-- (those joints don't exist there), so it's free to keep for the proxy.
-	local armL = math.sin(phase * TAU) * p.ArmSwing * move
-	local armR = math.sin((phase + p.LimbDesync) * TAU) * p.ArmSwing * move
+	-- The four limbs: an ANTI-SLIDE stride at the walk (front pair leads, rear pair a half-cycle
+	-- later -- a diagonal-ish walk), swelling into the gallop swing as chase rises. Small L/R desync.
+	local armWalkL = stride(phase, p.ArmSwing)
+	local armWalkR = stride(phase + p.LimbDesync, p.ArmSwing)
+	local legWalkL = stride(phase + 0.5, p.LegSwing)
+	local legWalkR = stride(phase + 0.5 + p.LimbDesync, p.LegSwing)
+	local armGallL = math.sin(phase * TAU) * p.ArmSwing
+	local armGallR = math.sin((phase + p.LimbDesync) * TAU) * p.ArmSwing
 	local legPhase = (phase + 0.5) % 1
-	local legL = math.sin(legPhase * TAU) * p.LegSwing * move
-	local legR = math.sin((legPhase + p.LimbDesync) * TAU) * p.LegSwing * move
+	local legGallL = math.sin(legPhase * TAU) * p.LegSwing
+	local legGallR = math.sin((legPhase + p.LimbDesync) * TAU) * p.LegSwing
+	local armL = (armWalkL * walk + armGallL * chase) * move
+	local armR = (armWalkR * walk + armGallR * chase) * move
+	local legL = (legWalkL * walk + legGallL * chase) * move
+	local legR = (legWalkR * walk + legGallR * chase) * move
 	local headBob = math.sin(phase * TAU + 1.0) * p.HeadBob * move
 	local headThrust = p.HeadThrust * chase
 	local scan = math.sin(clock * p.IdleScanSpeed) * p.IdleScanAmp * idle
@@ -141,7 +176,7 @@ function Gaits.monkey(phase: number, clock: number, w: Weights, p: MonkeyParams)
 		+ math.sin(clock * 1.1) * p.TailSway * 0.5 * idle
 
 	return {
-		Body = CFrame.new(0, bobY + breath, surge) * CFrame.Angles(rock + hunch, roll * 0.5, roll),
+		Body = CFrame.new(0, bobY + footfall + breath, surge) * CFrame.Angles(rock + hunch, roll * 0.5, roll),
 		CHead = CFrame.Angles(headBob - headThrust, scan, 0),
 		ArmL = CFrame.Angles(armL, 0, 0),
 		ArmR = CFrame.Angles(armR, 0, 0),
