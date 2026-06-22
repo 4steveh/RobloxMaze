@@ -472,6 +472,26 @@ while true do
 				inst.mover.update(nil, dt)
 				return
 			end
+			-- CONTACT CATCH: a player who walks/runs INTO the rig is ALWAYS grabbed -- even during the
+			-- peace window or post-catch dormancy. Hunting is gated (the monster doesn't CHASE while
+			-- resting), but touching the monster is still death. This is the fix for "I ran over the
+			-- monkey and it didn't get me": proximity death is never gated by peace/dormancy/state.
+			-- RespawnGrace still protects (the anti-spawn-camp invuln); a trap-stunned rig bailed above.
+			for _, ply in Players:GetPlayers() do
+				if
+					ply:GetAttribute(Attributes.InSafeRoom) ~= true
+					and ply:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
+					and ply:GetAttribute(Attributes.RespawnGrace) ~= true
+					and ply:GetAttribute(Attributes.Downed) ~= true
+				then
+					local phrp = PlayerUtil.livingRootPart(ply)
+					if phrp and (phrp.Position - root.Position).Magnitude <= inst.cfg.CatchRadius then
+						catch(inst, ply)
+						return
+					end
+				end
+			end
+
 			-- Dormant: the peace window (round start) OR the post-catch window -- sense nothing, so
 			-- the (freshly reset) FSM just patrols/paces its territory instead of hunting.
 			local dormant = peace or now < (inst.dormantUntil or 0)
