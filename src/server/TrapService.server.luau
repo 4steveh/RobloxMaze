@@ -91,6 +91,16 @@ end, function(part)
 	traps[part] = nil
 end)
 
+-- On a new round, re-arm every trap. Without this a trap caught mid-WINDUP at round end carries its
+-- stale windupStart/victim into the next round -- and because `now - windupStart` is then huge, it
+-- fires INSTANTLY (no telegraph, no wind-up reaction window) on whoever (re)spawns inside its radius.
+-- A reset means every trap is freshly armed and re-telegraphs.
+ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
+	for part in traps do
+		traps[part] = { state = "armed" }
+	end
+end)
+
 local function eligible(player: Player): boolean
 	return player:GetAttribute(Attributes.InSafeRoom) ~= true
 		and player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won

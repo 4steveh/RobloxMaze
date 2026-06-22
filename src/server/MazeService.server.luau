@@ -10,9 +10,11 @@
 -- reliably, while destroying/creating them is the confirmed unfixed engine bug that strands the AI.
 --
 -- Connectivity is GUARANTEED BY CONSTRUCTION (a spanning tree reaches every cell centre, where the
--- keys/exit/spawns sit), and re-verified two ways: a graph flood-fill (catches a wall that failed to
--- move) + a real PathfindingService:ComputeAsync smoke test entrance->gate (catches a stale navmesh
--- tile). MonsterService's peace window covers the settle, so monsters never path a half-built maze.
+-- keys/exit/spawns sit), and re-verified two ways: a graph flood-fill (catches a LOGIC error in the
+-- generator) + real PathfindingService:ComputeAsync smoke tests from the entrance to the gate AND to
+-- every winnability-critical cell (each key spot + the monkey nest) -- the navmesh truth that catches
+-- a wall which physically FAILED to slide and sealed a cell off. MonsterService's peace window covers
+-- the settle, so monsters never path a half-built maze.
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -47,6 +49,21 @@ local function cellCenter(c: number, r: number): Vector3
 		M.FloorY,
 		M.OriginZ + M.CellSize * r + M.CellSize / 2
 	)
+end
+
+-- The grid's far (north/east) world bounds, computed once and shared by the marker helpers.
+local gridMaxX = M.OriginX + M.CellSize * M.Cols
+local gridMaxZ = M.OriginZ + M.CellSize * M.Rows
+
+-- Map a world position to its grid cell, clamped to valid indices (a marker exactly on the far edge
+-- floors to Cols/Rows -- one past the last cell -- without the clamp). Returns nil if outside the grid.
+local function cellOf(p: Vector3): (number?, number?)
+	if p.X < M.OriginX or p.X > gridMaxX or p.Z < M.OriginZ or p.Z > gridMaxZ then
+		return nil, nil
+	end
+	local c = math.min(math.floor((p.X - M.OriginX) / M.CellSize), M.Cols - 1)
+	local r = math.min(math.floor((p.Z - M.OriginZ) / M.CellSize), M.Rows - 1)
+	return c, r
 end
 
 -- The closed-state world position + size of an interior edge wall.
@@ -119,16 +136,13 @@ buildPerimeterRow(M.OriginZ, M.EntranceCol, "MGS_") -- grid-south (the daycare-e
 -- be walled off by a raising wall on some random rounds (a silent, round-dependent break). We can't
 -- auto-fix placed content, but we WARN loudly so it's caught before publish, not in a playtest.
 local function validateMarkers()
-	local gridMaxX = M.OriginX + M.CellSize * M.Cols
-	local gridMaxZ = M.OriginZ + M.CellSize * M.Rows
 	for _, tag in ipairs({ Tags.KeySpot, Tags.Trap, Tags.MonkeySpawn, Tags.PatrolPoint }) do
 		for _, marker in ipairs(CollectionService:GetTagged(tag)) do
 			if marker:IsA("BasePart") then
 				local p = marker.Position
-				if p.X >= M.OriginX and p.X <= gridMaxX and p.Z >= M.OriginZ and p.Z <= gridMaxZ then
+				local c, r = cellOf(p)
+				if c then
 					-- in the maze grid: nearest cell centre and the XZ deviation from it
-					local c = math.floor((p.X - M.OriginX) / M.CellSize)
-					local r = math.floor((p.Z - M.OriginZ) / M.CellSize)
 					local centre = cellCenter(c, r)
 					local devX, devZ = math.abs(p.X - centre.X), math.abs(p.Z - centre.Z)
 					if devX > 2 or devZ > 2 then
@@ -182,6 +196,32 @@ local function applyLayout(open: { [string]: boolean })
 	end
 end
 
+-- The in-grid cells whose PHYSICAL reachability we re-verify after each carve. The graph proves the
+-- spanning tree CONNECTS every cell, but that can't catch the rare engine hiccup this whole system
+-- guards against -- a wall that FAILED to slide into its well and seals a cell off. The single
+-- entrance->gate smoke test misses such a seal anywhere off that one path, so we also test the
+-- winnability-critical cells: every in-grid KEY spot (a sealed key = an unwinnable round) and the
+-- monkey's NEST (a sealed nest = a stuck hunter). Deduped by cell. Out-of-grid markers (the daycare
+-- key spots) sit in static open geometry the carve never touches, so cellOf skips them.
+local function criticalCells(): { { c: number, r: number, label: string } }
+	local seen, cells = {}, {}
+	for _, tag in ipairs({ Tags.KeySpot, Tags.MonkeySpawn }) do
+		for _, marker in ipairs(CollectionService:GetTagged(tag)) do
+			if marker:IsA("BasePart") then
+				local c, r = cellOf(marker.Position)
+				if c then
+					local id = `{c}_{r}`
+					if not seen[id] then
+						seen[id] = true
+						table.insert(cells, { c = c, r = r, label = tag })
+					end
+				end
+			end
+		end
+	end
+	return cells
+end
+
 -- One carve: generate -> apply -> settle -> smoke test, retrying. NEVER leaves an UNVERIFIED layout:
 -- on total failure it reverts to the last layout that passed (the safe fallback), so a freak navmesh
 -- hiccup can't ship a round with a possibly-disconnected exit.
@@ -198,10 +238,23 @@ local function carveOnce(): boolean
 			task.wait(M.NavmeshSettleSeconds) -- Layer 2: navmesh truth, after the tiles re-rasterize.
 			local status = pathStatus(M.EntranceCol, 0, gateC, gateR)
 			if status == "Enum.PathStatus.Success" then
-				lastGoodLayout = res.open
-				return true
+				-- The gate is reachable; now confirm every key spot + the monkey nest is too, so a
+				-- wall that failed to slide can't strand a key (unwinnable) or the hunter off-path.
+				local sealed
+				for _, cell in ipairs(criticalCells()) do
+					if pathStatus(M.EntranceCol, 0, cell.c, cell.r) ~= "Enum.PathStatus.Success" then
+						sealed = `{cell.label} cell ({cell.c},{cell.r})`
+						break
+					end
+				end
+				if not sealed then
+					lastGoodLayout = res.open
+					return true
+				end
+				warn(`[MazeService] carve attempt {attempt}/{M.MaxCarveRetries}: {sealed} unreachable; re-carving`)
+			else
+				warn(`[MazeService] carve attempt {attempt}/{M.MaxCarveRetries}: smoke test {status}; re-carving`)
 			end
-			warn(`[MazeService] carve attempt {attempt}/{M.MaxCarveRetries}: smoke test {status}; re-carving`)
 		end
 	end
 	if lastGoodLayout then
