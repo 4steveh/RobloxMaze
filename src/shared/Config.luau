@@ -251,12 +251,14 @@ Config.Monster = table.freeze({
 		PostCatchDormantSeconds = 4, -- seconds after a catch the rig senses nothing -- overlaps the respawn window
 		NoKeySpawnRadius = 30, -- studs: KeySpots within this of any MonsterSpawn are skipped (no key in its lap)
 
-		-- Territory separation (the fix for "the two monsters shadow each other"). The bunny
-		-- roams the maze's PatrolPoints; the monkey GUARDS its nest (now the exit approach). To
-		-- stop the bunny wandering into the monkey's den and crowding the same corridor, patrol
-		-- nodes within this of ANY MonkeySpawn are dropped from the bunny's graph -- so the exit
-		-- region belongs to the monkey and the broad maze to the bunny. (MonsterService filters.)
-		NestExclusionRadius = 32, -- studs around a MonkeySpawn the bunny's patrol graph excludes
+		-- Territory split (fixes BOTH "the two monsters shadow each other" AND "I never saw the
+		-- monkey"). The two own DISTINCT halves of the map: the BUNNY roams the south DAYCARE
+		-- (PatrolPoints 1-5), the MONKEY roams the north MAZE (its nest is the maze centre). Patrol
+		-- nodes within this of ANY MonkeySpawn are dropped from the bunny's graph, so the bunny stays
+		-- in the daycare and the whole maze belongs to the monkey -- which the player traverses to
+		-- reach the keys + exit, so the monkey is now ENCOUNTERED during the run (not camped at the
+		-- far exit). Sized to drop the 4 maze PatrolPoints (Z>=94) while keeping the 5 daycare ones.
+		NestExclusionRadius = 75, -- studs around a MonkeySpawn the bunny's patrol graph excludes
 		-- Patrol variety: the bunny picks RANDOMLY among the N nearest unvisited nodes rather than
 		-- always the single nearest, so its route varies round to round (the fix for "it patrols
 		-- the exact same spots"). 1 = the old deterministic nearest-node tour.
@@ -345,8 +347,9 @@ Config.Monster = table.freeze({
 			AlertDuration = 1.2, -- seconds it freezes facing the source -- the fair "it heard you" tell
 			SearchDuration = 6, -- seconds poking the last point before giving up
 			SearchWanderRadius = 12, -- studs it wanders around the last-heard point
-			NestWanderRadius = 22, -- studs it paces around its MonkeySpawn nest while patrolling
-			-- (it GUARDS its territory -- it does NOT roam the maze like the bunny, so they don't shadow each other)
+			NestWanderRadius = 40, -- studs it ROAMS around its MonkeySpawn (the maze centre) while patrolling
+			-- (wide enough to range the whole maze body so the player encounters it -- pathfinding +
+			-- WanderRepickSeconds handle the random points that land in walls; the bunny owns the daycare)
 			InvestigateJitter = 6, -- studs of random lateral weave per repath (slightly dodgeable)
 			CatchRadius = 5, -- distance that counts as a catch (instant)
 			PatrolMemory = 2, -- patrol nodes remembered as "recently visited"
