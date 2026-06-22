@@ -22,6 +22,7 @@ local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local Enums = require(ReplicatedStorage.Enums)
 local WorldFolders = require(ReplicatedStorage.WorldFolders)
+local Cosmetics = require(ReplicatedStorage.Cosmetics)
 
 local player = Players.LocalPlayer
 
@@ -34,6 +35,21 @@ local flickerPhase = 0
 
 -- Publish the on/off state so PlayerSFXController can play the toggle click (local).
 player:SetAttribute(Attributes.FlashlightOn, lightOn)
+
+-- Tint the beam with the player's equipped flashlight-color cosmetic (purely cosmetic --
+-- never touches Range/Brightness/detection, so the shop stays non-pay-to-win).
+local function applyEquippedColor()
+	if not light then
+		return
+	end
+	local id = player:GetAttribute(Attributes.EquippedFlashlightColor)
+	local cosmetic = id and Cosmetics.get(id)
+	if cosmetic and cosmetic.kind == "FlashlightColor" then
+		light.Color = cosmetic.payload
+	else
+		light.Color = Color3.new(1, 1, 1)
+	end
+end
 
 -- Idempotent, SELF-HEALING light builder -- safe to call every frame. It (re)builds the
 -- emitter + SpotLight only when they're missing/detached and the Head exists. This is the
@@ -84,7 +100,11 @@ local function ensureLight(character)
 	spot.Parent = part
 	emitter = part
 	light = spot
+	applyEquippedColor()
 end
+
+-- Re-tint live when the player equips a different colour in the shop.
+player:GetAttributeChangedSignal(Attributes.EquippedFlashlightColor):Connect(applyEquippedColor)
 
 -- Extra flicker when a HUNTING monster is near: returns 0..1 (subtracted from beam
 -- brightness). A fear beat + a tell that something is on you. Reads only replicated rig

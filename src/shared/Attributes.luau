@@ -66,6 +66,14 @@ local Attributes = {
 	-- Config.Downed.ReviveRadius fills it). Server-authoritative; the client renders the bar.
 	ReviveProgress = "ReviveProgress",
 
+	-- number on a Player: persistent coin balance (server-authoritative, DataService). A MIRROR
+	-- of the in-memory profile for the HUD to read -- never read back as the source of truth.
+	Coins = "Coins",
+
+	-- string on a Player: the equipped flashlight-color cosmetic id (Cosmetics catalog). Mirror
+	-- of the profile; FlashlightController reads it to tint the beam (cosmetic only).
+	EquippedFlashlightColor = "EquippedFlashlightColor",
+
 	-- number on a Player (0..1): server-computed audible NOISE this player is making
 	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
 	-- NoiseService (never client-set), read by the monkey's hearing detection and the

@@ -22,10 +22,14 @@ local Names = table.freeze({
 	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught (payload: downed:boolean -- true = grabbed into the revivable DOWNED state, false/nil = killed → respawn). Drives the jumpscare.
 	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
 	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
+	RoundSummary = "RoundSummary", -- server -> client: end-of-round results (payload: {coinsGained, total, keys, escaped}) -- drives the results panel
+	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
+	ShopResult = "ShopResult", -- server -> client: result of a ShopAction (payload: {ok, op, id, reason?})
 
 	-- CLIENT -> SERVER (the only inbound remote). Payload is HOSTILE: validate type and
 	-- rate-limit on the server (see SprintService). Carries the sprint key held-state.
 	SprintIntent = "SprintIntent", -- client -> server: boolean, "is the sprint key held"
+	ShopAction = "ShopAction", -- client -> server: HOSTILE payload {op="buy"|"equip", id=string} -- validated + rate-limited (ShopService)
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
@@ -39,7 +43,11 @@ local REMOTE_EVENTS: { string } = {
 	Names.MonsterCaught,
 	Names.MonsterStateChanged,
 	Names.TrapTriggered,
+	Names.RoundSummary,
+	Names.DataReady,
+	Names.ShopResult,
 	Names.SprintIntent,
+	Names.ShopAction,
 }
 
 local Remotes = {}
