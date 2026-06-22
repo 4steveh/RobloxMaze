@@ -26,10 +26,11 @@ local Names = table.freeze({
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
 	ShopResult = "ShopResult", -- server -> client: result of a ShopAction (payload: {ok, op, id, reason?})
 
-	-- CLIENT -> SERVER (the only inbound remote). Payload is HOSTILE: validate type and
-	-- rate-limit on the server (see SprintService). Carries the sprint key held-state.
+	-- CLIENT -> SERVER (inbound). Payload is HOSTILE: validate type and rate-limit on the
+	-- server (see SprintService). Carries the sprint key held-state.
 	SprintIntent = "SprintIntent", -- client -> server: boolean, "is the sprint key held"
 	ShopAction = "ShopAction", -- client -> server: HOSTILE payload {op="buy"|"equip", id=string} -- validated + rate-limited (ShopService)
+	ThrowDecoy = "ThrowDecoy", -- client -> server: NO payload (just intent). The server computes the landing point from the player's OWN server-known position+facing (never trusts a client position), validates a per-player cooldown, spawns a rattling decoy + fires ServerSignals.NoiseEvent there to misdirect the monkey (DecoyService)
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
@@ -48,6 +49,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.ShopResult,
 	Names.SprintIntent,
 	Names.ShopAction,
+	Names.ThrowDecoy,
 }
 
 local Remotes = {}
