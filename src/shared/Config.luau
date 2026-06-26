@@ -267,6 +267,12 @@ Config.HUD = table.freeze({
 	StaminaFillColor = Color3.fromRGB(120, 230, 140),
 	StaminaLowColor = Color3.fromRGB(235, 180, 70),
 
+	-- Gauge captions (so a new player knows what the two unlabeled left-corner bars ARE -- mirrors
+	-- the NoiseMeter's "NOISE" caption on the right). Small all-caps tags sitting above each gauge.
+	GaugeLabelSize = 11, -- px text size for the BATTERY / STAMINA captions
+	BatteryLabel = "BATTERY",
+	StaminaLabel = "STAMINA",
+
 	-- Transient feedback toast (key pickup / locked door), centered below the tracker
 	ToastYScale = 0.30, -- screen-height fraction for the toast's vertical position
 	ToastWidth = 420, -- px
@@ -277,6 +283,14 @@ Config.HUD = table.freeze({
 	ArrowSize = 64, -- px
 	ArrowBottomOffset = 120, -- px from the bottom edge
 	ArrowColor = Color3.fromRGB(240, 205, 70),
+	ArrowLabel = "EXIT", -- caption under the gold exit arrow, so its glyph can't be mistaken for the green KEY arrow
+	ArrowLabelSize = 14, -- px
+
+	-- Key-pickup SCREEN PULSE: a brief full-screen gold flash on every pickup, so a key grabbed
+	-- mid-chase (eyes on the monster, not the pip row) still registers. Render-only juice atop the pip pop.
+	PickupPulseColor = Color3.fromRGB(240, 205, 70),
+	PickupPulseTransparency = 0.78, -- the pulse's most-opaque alpha at its peak (subtle -- a wash, not a blink)
+	PickupPulseSeconds = 0.45, -- seconds the pulse fades from peak to clear
 
 	-- Win overlay
 	WinBackColor = Color3.fromRGB(10, 14, 12),
@@ -300,7 +314,7 @@ Config.HUD = table.freeze({
 	-- Key pip POP: a collected key should feel TACTILE, so the just-filled pip overshoots in
 	-- scale and flashes its stroke bright, then settles -- not a flat BackgroundColor flip.
 	PipPopScale = 1.5, -- the filled pip overshoots to this x its size...
-	PipPopSeconds = 0.34, -- ...then Back-eases back to 1x over this long
+	PipPopSeconds = 0.5, -- ...then Back-eases back to 1x over this long (lengthened so a mid-chase pickup still registers)
 	PipPopStrokeColor = Color3.fromRGB(255, 246, 190), -- the brief bright stroke flash on fill
 	PipPopStrokeThickness = 4, -- px the stroke thickens to during the flash
 
@@ -582,6 +596,10 @@ Config.Noise = table.freeze({
 	MeterLoudColor = Color3.fromRGB(235, 70, 60), -- fill once over the threshold (the monkey hears you)
 	MeterThresholdColor = Color3.fromRGB(240, 220, 120), -- the "audible" marker line
 	MeterLabel = "NOISE",
+	-- A tiny caption pinned over the threshold marker so the line's MEANING is explicit: cross it and
+	-- the monkey can hear you. Teaches the noise counter at the HUD element itself (not only via a tip).
+	MeterThresholdLabel = "MONKEY HEARS", -- centered over the marker line
+	MeterThresholdLabelSize = 10, -- px
 })
 
 -- Noise DECOY: noise as a WEAPON, not just a liability (the Granny lesson) ----------
@@ -776,6 +794,8 @@ Config.Compass = table.freeze({
 	ArrowBottomOffset = 200, -- px from the bottom edge (sits above the exit arrow)
 	ArrowColor = Color3.fromRGB(150, 230, 110),
 	LabelText = "KEY",
+	ArrowCaption = "KEY", -- small caption under the green edge arrow (pairs with the gold "EXIT" arrow so the two glyphs never read alike)
+	ArrowCaptionSize = 13, -- px
 })
 
 -- Onboarding: first-30-seconds direction (intro, controls, objective tracker) -----
@@ -805,6 +825,17 @@ Config.Onboarding = table.freeze({
 	-- Shown lobby-wide when the pre-round PEACE window ends (a VISUAL companion to the HuntBegins sting).
 	HuntBeginsTip = "THE HUNT BEGINS — the monsters are awake now",
 	TipSeconds = 5, -- how long a tip holds before fading
+
+	-- Threat legend (intro): a brief two-line key pairing each monster's COLOUR to its COUNTER, shown
+	-- under the spawn banner so a new player knows what the two creatures are BEFORE meeting them. The
+	-- colours mirror the radar blips + eye-glow tells (red = the seeing bunny, yellow = the hearing
+	-- monkey), so the legend, the radar, and the glowing eyes all teach the SAME colour language.
+	LegendTitle = "KNOW YOUR HUNTERS",
+	LegendBunnyColor = Color3.fromRGB(220, 70, 66), -- red: the VISION stalker (mirrors its eye-glow / radar blip)
+	LegendBunnyText = "RED — it SEES you. Break line of sight & sprint.",
+	LegendMonkeyColor = Color3.fromRGB(245, 205, 70), -- yellow: the NOISE hunter
+	LegendMonkeyText = "YELLOW — it HEARS you. Move quietly or throw a DECOY (Q).",
+	LegendSeconds = 7, -- how long the legend holds before fading (a touch longer than the banner -- it's denser)
 })
 
 -- On-screen touch controls (mobile / iPad) --------------------------------------

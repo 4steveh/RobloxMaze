@@ -89,6 +89,44 @@ subtitle.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 subtitle.Text = O.IntroSub
 subtitle.Parent = gui
 
+-- Threat legend (intro): a colour->counter key for the two hunters, shown under the banner so a
+-- new player learns what they're up against BEFORE the first encounter. The colours mirror the
+-- radar blips + eye-glow tells, so legend / radar / glowing eyes all teach one colour language.
+local legend = Instance.new("Frame")
+legend.Name = "ThreatLegend"
+legend.AnchorPoint = Vector2.new(0.5, 0)
+legend.Position = UDim2.fromScale(0.5, 0.52)
+legend.Size = UDim2.fromOffset(620, 96)
+legend.BackgroundTransparency = 1
+legend.Parent = gui
+
+local legendLayout = Instance.new("UIListLayout")
+legendLayout.FillDirection = Enum.FillDirection.Vertical
+legendLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+legendLayout.Padding = UDim.new(0, 6)
+legendLayout.Parent = legend
+
+local function legendLine(text, color, order, size, font)
+	local lbl = Instance.new("TextLabel")
+	lbl.LayoutOrder = order
+	lbl.Size = UDim2.fromOffset(620, size + 6)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = font
+	lbl.TextSize = size
+	lbl.TextColor3 = color
+	lbl.TextStrokeColor3 = Config.UI.TextStrokeColor
+	lbl.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+	lbl.Text = text
+	lbl.Parent = legend
+	return lbl
+end
+
+local legendLines = {
+	legendLine(O.LegendTitle, Config.UI.MutedTextColor, 1, 16, Config.UI.SubheadingFont),
+	legendLine(O.LegendBunnyText, O.LegendBunnyColor, 2, 19, Config.UI.BodyFont),
+	legendLine(O.LegendMonkeyText, O.LegendMonkeyColor, 3, 19, Config.UI.BodyFont),
+}
+
 -- Controls hint (bottom-center, fades after a timer or first move) ------------------
 local controls = Instance.new("TextLabel")
 controls.Name = "ControlsHint"
@@ -121,6 +159,13 @@ end
 task.delay(O.IntroBannerSeconds, function()
 	fadeOut(title, 1)
 	fadeOut(subtitle, 1)
+end)
+
+-- The legend holds a little longer (it's denser to read), then fades on its own.
+task.delay(O.LegendSeconds, function()
+	for _, line in legendLines do
+		fadeOut(line, 1)
+	end
 end)
 
 -- Fade the controls hint after its timer OR the first movement key, whichever first.

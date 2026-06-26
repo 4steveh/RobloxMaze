@@ -131,6 +131,28 @@ local function popPip(i)
 	}):Play()
 end
 
+-- A caption laid over a gauge bar (left-aligned, strong stroke so it reads even over a full
+-- fill), so the two left-corner bars are self-labelling (BATTERY / STAMINA) the way the NOISE
+-- meter labels itself on the right -- a new player no longer has to guess what they are.
+local function makeGaugeLabel(parent, text)
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = "Label"
+	lbl.AnchorPoint = Vector2.new(0, 0.5)
+	lbl.Position = UDim2.new(0, 6, 0.5, 0)
+	lbl.Size = UDim2.new(1, -12, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Config.UI.SubheadingFont
+	lbl.TextSize = HUD.GaugeLabelSize
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.TextColor3 = Config.UI.TextColor
+	lbl.TextStrokeColor3 = Config.UI.TextStrokeColor
+	lbl.TextStrokeTransparency = 0.15
+	lbl.Text = text
+	lbl.ZIndex = 5
+	lbl.Parent = parent
+	return lbl
+end
+
 -- Battery gauge ---------------------------------------------------------------
 local batteryBack = Instance.new("Frame")
 batteryBack.Name = "BatteryGauge"
@@ -153,6 +175,7 @@ local batteryFillCorner = Instance.new("UICorner")
 batteryFillCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
 batteryFillCorner.Parent = batteryFill
 batteryFill.Parent = batteryBack
+makeGaugeLabel(batteryBack, HUD.BatteryLabel)
 
 -- Stamina gauge (sits just above the battery gauge) ----------------------------
 local staminaBack = Instance.new("Frame")
@@ -176,6 +199,7 @@ local staminaFillCorner = Instance.new("UICorner")
 staminaFillCorner.CornerRadius = UDim.new(0, HUD.CornerRadius)
 staminaFillCorner.Parent = staminaFill
 staminaFill.Parent = staminaBack
+makeGaugeLabel(staminaBack, HUD.StaminaLabel)
 
 -- Exhaustion flash: a stroke on the gauge (the render loop owns the FILL colour every frame, so a
 -- fill-colour flash would be overwritten -- the stroke is ours to flash). Invisible at rest.
@@ -199,6 +223,23 @@ arrow.TextScaled = true
 arrow.TextColor3 = HUD.ArrowColor
 arrow.Visible = false
 arrow.Parent = gui
+
+-- "EXIT" caption under the gold arrow, so its glyph is never confused with the green KEY arrow
+-- (CompassController) that points to keys during the hunt -- the two now read as distinct goals.
+local arrowLabel = Instance.new("TextLabel")
+arrowLabel.Name = "ExitArrowLabel"
+arrowLabel.AnchorPoint = Vector2.new(0.5, 0) -- top-anchored just under the arrow's bottom edge
+arrowLabel.Position = UDim2.new(0.5, 0, 1, -HUD.ArrowBottomOffset)
+arrowLabel.Size = UDim2.fromOffset(140, HUD.ArrowLabelSize + 4)
+arrowLabel.BackgroundTransparency = 1
+arrowLabel.Font = Config.UI.SubheadingFont
+arrowLabel.TextSize = HUD.ArrowLabelSize
+arrowLabel.TextColor3 = HUD.ArrowColor
+arrowLabel.TextStrokeColor3 = Config.UI.TextStrokeColor
+arrowLabel.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+arrowLabel.Text = HUD.ArrowLabel
+arrowLabel.Visible = false
+arrowLabel.Parent = gui
 
 -- Win overlay (icon-led; minimal text) ----------------------------------------
 local winOverlay = Instance.new("Frame")
@@ -244,6 +285,27 @@ winFlash.BackgroundTransparency = 1
 winFlash.ZIndex = 10
 winFlash.Visible = false
 winFlash.Parent = gui
+
+-- Key-pickup SCREEN PULSE: a brief gold wash on every pickup, so a key grabbed mid-chase (when
+-- your eyes are on the monster, not the pip row) still registers as progress. Render-only juice.
+local pickupPulse = Instance.new("Frame")
+pickupPulse.Name = "PickupPulse"
+pickupPulse.Size = UDim2.fromScale(1, 1)
+pickupPulse.BackgroundColor3 = HUD.PickupPulseColor
+pickupPulse.BackgroundTransparency = 1
+pickupPulse.ZIndex = 9
+pickupPulse.Visible = false
+pickupPulse.Parent = gui
+
+local function playPickupPulse()
+	pickupPulse.Visible = true
+	pickupPulse.BackgroundTransparency = HUD.PickupPulseTransparency
+	TweenService:Create(
+		pickupPulse,
+		TweenInfo.new(HUD.PickupPulseSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 1 }
+	):Play()
+end
 
 -- The escape is the run's PAYOFF, so it arrives as a sequence (bloom -> overlay eases in -> icon
 -- pops with an overshoot -> label rises in), not a hard Visible flip. The win jingle already lands
@@ -386,6 +448,7 @@ keyCollectedRemote.OnClientEvent:Connect(function(count)
 	count = count or keyCount
 	showToast(string.format("KEY %d/%d", count, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
 	popPip(count) -- the pip that just filled (index == the new team total)
+	playPickupPulse() -- a screen-wide flash so a mid-chase pickup is never missed
 end)
 
 gameWonRemote.OnClientEvent:Connect(playWinCelebration)
@@ -413,8 +476,12 @@ player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
 end)
 
 exitLockedRemote.OnClientEvent:Connect(function()
+	-- Show the REMAINING delta ("NEED 1 MORE KEY") rather than the raw target, so a player at the
+	-- locked door instantly knows how much further to go (with correct singular/plural).
+	local missing = math.max(requiredKeys - keyCount, 0)
+	local needText = if missing == 1 then "NEED 1 MORE KEY" else string.format("NEED %d MORE KEYS", missing)
 	showToast(
-		string.format("%s — NEED %d KEYS (have %d)", Config.Feedback.LockedTextPrefix, requiredKeys, keyCount),
+		string.format("%s — %s", Config.Feedback.LockedTextPrefix, needText),
 		HUD.BatteryLowColor,
 		Config.Feedback.LockedToastSeconds
 	)
@@ -462,6 +529,7 @@ RunService.RenderStepped:Connect(function()
 	-- Exit arrow: only once every key is collected; points toward the ExitDoor.
 	local showArrow = keyCount >= requiredKeys
 	arrow.Visible = showArrow
+	arrowLabel.Visible = showArrow
 	if showArrow then
 		local character = player.Character
 		local rootPart = character and character:FindFirstChild("HumanoidRootPart")

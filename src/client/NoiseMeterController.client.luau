@@ -67,6 +67,23 @@ marker.BorderSizePixel = 0
 marker.ZIndex = 3
 marker.Parent = panel
 
+-- A tiny caption centered over the marker so the line's MEANING is explicit at a glance: cross it
+-- and the monkey can hear you. Teaches the noise counter at the HUD itself, not only via a JIT tip.
+local thresholdLabel = Instance.new("TextLabel")
+thresholdLabel.Name = "ThresholdLabel"
+thresholdLabel.AnchorPoint = Vector2.new(0.5, 1)
+thresholdLabel.Position = UDim2.new(threshold, 0, 0, -3)
+thresholdLabel.Size = UDim2.fromOffset(100, N.MeterThresholdLabelSize + 4)
+thresholdLabel.BackgroundTransparency = 1
+thresholdLabel.Font = Config.UI.BodyFont
+thresholdLabel.TextSize = N.MeterThresholdLabelSize
+thresholdLabel.TextColor3 = N.MeterThresholdColor
+thresholdLabel.TextStrokeColor3 = Config.UI.TextStrokeColor
+thresholdLabel.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+thresholdLabel.Text = N.MeterThresholdLabel
+thresholdLabel.ZIndex = 3
+thresholdLabel.Parent = panel
+
 local label = Instance.new("TextLabel")
 label.AnchorPoint = Vector2.new(1, 1)
 label.Position = UDim2.new(1, 0, 0, -2)
@@ -85,12 +102,17 @@ RunService.RenderStepped:Connect(function()
 	fill.Size = UDim2.fromScale(level, 1)
 	local audible = level >= threshold
 	if audible then
-		-- Loud: flip red and pulse so it reads as a live alarm.
+		-- Loud: flip red and pulse so it reads as a live alarm -- the marker + its caption flash too,
+		-- so the eye is drawn to exactly the line you just crossed ("the monkey can hear you NOW").
 		local pulse = 0.5 + 0.5 * math.sin(os.clock() * 10)
 		fill.BackgroundColor3 = N.MeterLoudColor:Lerp(Color3.new(1, 1, 1), pulse * 0.25)
 		label.TextColor3 = N.MeterLoudColor
+		marker.BackgroundColor3 = N.MeterLoudColor
+		thresholdLabel.TextColor3 = N.MeterLoudColor:Lerp(Color3.new(1, 1, 1), pulse * 0.4)
 	else
 		fill.BackgroundColor3 = N.MeterQuietColor
 		label.TextColor3 = N.MeterQuietColor
+		marker.BackgroundColor3 = N.MeterThresholdColor
+		thresholdLabel.TextColor3 = N.MeterThresholdColor
 	end
 end)

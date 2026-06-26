@@ -149,6 +149,22 @@ arrow.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 arrow.Visible = false
 arrow.Parent = gui
 
+-- "KEY" caption under the green arrow, so its glyph isn't confused with the gold "EXIT" arrow
+-- (HUDController) that appears once every key is in -- the two wayfinders now read as distinct goals.
+local arrowCaption = Instance.new("TextLabel")
+arrowCaption.Name = "KeyArrowCaption"
+arrowCaption.AnchorPoint = Vector2.new(0.5, 0) -- top-anchored just under the arrow's bottom edge
+arrowCaption.Position = UDim2.new(0.5, 0, 1, -C.ArrowBottomOffset)
+arrowCaption.Size = UDim2.fromOffset(120, C.ArrowCaptionSize + 4)
+arrowCaption.BackgroundTransparency = 1
+arrowCaption.Font = Config.UI.SubheadingFont
+arrowCaption.TextSize = C.ArrowCaptionSize
+arrowCaption.TextColor3 = C.ArrowColor
+arrowCaption.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+arrowCaption.Text = C.ArrowCaption
+arrowCaption.Visible = false
+arrowCaption.Parent = gui
+
 local function nearestKey(fromPos)
 	local best, bestDist = nil, math.huge
 	for keyPart in beacons do
@@ -174,6 +190,7 @@ RunService.RenderStepped:Connect(function()
 	local camera = Workspace.CurrentCamera
 	if not (rootPart and camera) then
 		arrow.Visible = false
+		arrowCaption.Visible = false
 		return
 	end
 
@@ -192,9 +209,13 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
+	-- Hide the KEY arrow the moment every key is in -- the gold EXIT arrow + EXIT beacon take over
+	-- the wayfinding from here, so the two never compete for the player's eye (no keys remain anyway).
 	local key = nearestKey(rootPart.Position)
-	arrow.Visible = key ~= nil
-	if key then
+	local showKeyArrow = key ~= nil and not hasAllKeys
+	arrow.Visible = showKeyArrow
+	arrowCaption.Visible = showKeyArrow
+	if showKeyArrow then
 		local toKey = key.Position - rootPart.Position
 		local camCF = camera.CFrame
 		local f = camCF.LookVector.X * toKey.X + camCF.LookVector.Z * toKey.Z
