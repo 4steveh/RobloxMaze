@@ -22,6 +22,7 @@ local Names = table.freeze({
 	MonsterCaught = "MonsterCaught", -- server -> client: this player was caught (payload: downed:boolean -- true = grabbed into the revivable DOWNED state, false/nil = killed → respawn; species:string -- which monster caught you, so the jumpscare shows the RIGHT creature). Drives the jumpscare.
 	MonsterStateChanged = "MonsterStateChanged", -- server -> client: a monster chasing THIS player changed FSM state (payload: state string) -- drives the chase sting
 	HuntBegins = "HuntBegins", -- server -> ALL clients: the pre-round PEACE window just ended and the monsters are now hunting (no payload) -- drives a dread sting so the calm->hunt transition is FELT (else the peace window is invisible)
+	HuntingAlert = "HuntingAlert", -- server -> ALL clients: a monster just BEGAN actively hunting a player (payload: that player's name) -- the TARGET already gets MonsterStateChanged; this makes the peril TEAM-VISIBLE so teammates can help or scatter (a co-op situational-awareness cue, throttled per target)
 	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
 	RoundSummary = "RoundSummary", -- server -> client: end-of-round results (payload: {coinsGained, total, keys, escaped}) -- drives the results panel
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
@@ -45,6 +46,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.MonsterCaught,
 	Names.MonsterStateChanged,
 	Names.HuntBegins,
+	Names.HuntingAlert,
 	Names.TrapTriggered,
 	Names.RoundSummary,
 	Names.DataReady,

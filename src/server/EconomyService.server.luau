@@ -27,6 +27,7 @@ ServerSignals.get(ServerSignals.Names.RoundEnded).Event:Connect(function(summari
 				coinsGained = award,
 				total = total,
 				keys = s.keys,
+				bonusKeys = s.bonusKeys,
 				escaped = s.escaped,
 			})
 		end

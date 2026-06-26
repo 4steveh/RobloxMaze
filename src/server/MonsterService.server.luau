@@ -36,6 +36,12 @@ monstersFolder.Parent = Workspace
 Remotes.init()
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
 local huntBeginsRemote = Remotes.get(Remotes.Names.HuntBegins) -- fired once when the peace window ends
+local huntingAlertRemote = Remotes.get(Remotes.Names.HuntingAlert) -- co-op SA: a teammate just got hunted
+local lastHuntAlert = {} -- [userId] = os.clock() of the last hunt alert fired for that player (throttle)
+-- Drop a departed player's throttle entry so the table can't grow unbounded over a long-lived server.
+Players.PlayerRemoving:Connect(function(player)
+	lastHuntAlert[player.UserId] = nil
+end)
 -- A catch hands the OUTCOME to DownedService (down vs kill) via this signal; MonsterService
 -- stays out of player-life logic (it only repels its rig home so it never camps the body).
 local playerCaughtSignal = ServerSignals.get(ServerSignals.Names.PlayerCaught)
@@ -577,6 +583,17 @@ while true do
 				local target = uid and Players:GetPlayerByUserId(uid)
 				if target then
 					stateRemote:FireClient(target, inst.state.name)
+				end
+				-- Co-op SA: this rig just STARTED a lethal hunt (entered Chase/Investigate from a
+				-- non-lethal state) on a real player -> alert the WHOLE lobby (throttled per target),
+				-- so teammates know someone's in danger. The target already feels it via stateRemote.
+				local tuid = inst.state.targetUserId
+				if tuid and LETHAL_HUNT[inst.state.name] and not LETHAL_HUNT[inst.prevState] then
+					local hunted = Players:GetPlayerByUserId(tuid)
+					if hunted and now - (lastHuntAlert[tuid] or -math.huge) >= Config.Feedback.HuntAlertCooldown then
+						lastHuntAlert[tuid] = now
+						huntingAlertRemote:FireAllClients(hunted.Name)
+					end
 				end
 				inst.prevState = inst.state.name
 			end

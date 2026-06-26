@@ -15,6 +15,7 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
+local ServerSignals = require(script.Parent.ServerSignals)
 
 local E = Config.Environment
 
@@ -86,3 +87,18 @@ grade.Contrast = E.BaseGrade.Contrast
 grade.Saturation = E.BaseGrade.Saturation
 grade.TintColor = E.BaseGrade.TintColor
 grade.Enabled = true
+
+-- Per-round maze THEME: MazeService picks a theme each carve and fires the index. We remix ONLY the
+-- atmosphere/grade COLOUR (haze tint, decay, base-grade tint) to match -- never Brightness, Ambient,
+-- Density or Exposure, which are the navigability-critical values tuned in Config.Environment. So a
+-- themed round looks different (amber boiler vs icy morgue vs mossy green) but is never darker/foggier
+-- than the baseline. Colour-only = exploit-irrelevant + mobile-safe. Empty Config.MazeThemes = no-op.
+ServerSignals.get(ServerSignals.Names.MazeThemeSelected).Event:Connect(function(index)
+	local theme = Config.MazeThemes[index]
+	if not theme then
+		return
+	end
+	atmos.Color = theme.AtmosphereColor
+	atmos.Decay = theme.AtmosphereDecay
+	grade.TintColor = theme.GradeTint
+end)

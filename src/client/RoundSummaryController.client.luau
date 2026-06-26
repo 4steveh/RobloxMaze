@@ -101,7 +101,11 @@ Remotes.get(Remotes.Names.RoundSummary).OnClientEvent:Connect(function(data)
 	title.Text = if data.escaped then "ESCAPED!" else "ROUND OVER"
 	title.TextColor3 = if data.escaped then Config.UI.SafeColor else Config.UI.TextColor
 	coins.Text = string.format("+%d", data.coinsGained or 0)
-	breakdown.Text = string.format("%d keys  ·  %s", data.keys or 0, if data.escaped then "escaped" else "caught")
+	-- Surface the optional gold bonus keys only when the team grabbed any (so the line stays clean).
+	local bonus = data.bonusKeys or 0
+	local bonusText = if bonus > 0 then string.format("  ·  %d bonus", bonus) else ""
+	breakdown.Text =
+		string.format("%d keys%s  ·  %s", data.keys or 0, bonusText, if data.escaped then "escaped" else "caught")
 	total.Text = string.format("Total: %d coins", data.total or 0)
 
 	panel.Visible = true

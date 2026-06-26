@@ -19,6 +19,12 @@ local Attributes = {
 	-- KeyService), survives death/respawn, read by ExitService and the HUD.
 	KeyCount = "KeyCount",
 
+	-- number on a Player: OPTIONAL bonus keys the team has grabbed this round (gold, not required
+	-- to win -- a risk/reward detour in dangerous spots). Server-authoritative (KeyService), mirrored
+	-- to every player like KeyCount; read by RoundService into the round summary (round-end coin bonus)
+	-- and the HUD (a pickup toast). Does NOT gate the exit -- only KeyCount does.
+	BonusKeyCount = "BonusKeyCount",
+
 	-- string on a Player: the player's current Enums.GameState ("Playing"/"Won"),
 	-- set by ExitService.
 	GameState = "GameState",

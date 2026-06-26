@@ -62,6 +62,7 @@ local function beginNewRound()
 			escaped = player:GetAttribute(Attributes.GameState) == Enums.GameState.Won,
 			survivalSeconds = now - started,
 			coopEscapers = escapedCount,
+			bonusKeys = player:GetAttribute(Attributes.BonusKeyCount) or 0,
 		})
 	end
 	roundEnded:Fire(summaries)

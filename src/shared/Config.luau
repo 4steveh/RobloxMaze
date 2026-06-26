@@ -74,6 +74,10 @@ Config.Keys = table.freeze({
 	RequiredToWin = 3, -- keys the player must hold to open the exit
 	SpawnPerRound = 3, -- keys placed in the maze each round (random subset of KeySpot markers)
 	NoSpawnNearStartRadius = 26, -- studs: keys never spawn this close to a PlayerStart, so you can't auto-collect one the instant you spawn (you must go FIND them)
+	-- OPTIONAL bonus keys (gold): spawned at the NEXT unused KeySpots after the required ones (the
+	-- farther, more dangerous spots), NOT required to win + NOT beaconed by the compass -- a pure
+	-- risk/reward detour worth round-end coins. 0 disables them. They never reduce required-key spots.
+	BonusSpawnPerRound = 2,
 })
 
 -- Key model (the collectible's placeholder visuals) -----------------------------
@@ -83,6 +87,11 @@ Config.KeyModel = table.freeze({
 	Size = Vector3.new(1.6, 2.6, 0.5), -- studs
 	Color = Color3.fromRGB(64, 74, 58), -- desaturated, sickly
 	LightColor = Color3.fromRGB(125, 205, 95), -- eerie glow
+	-- Bonus keys reuse this whole model but recoloured GOLD, so they read as clearly DIFFERENT from the
+	-- green required keys (treasure you may grab, not an objective you must). KeyService applies these.
+	BonusColor = Color3.fromRGB(120, 96, 36), -- desaturated old-gold body
+	BonusLightColor = Color3.fromRGB(255, 205, 90), -- warm gold glow
+	BonusSparkleColor = Color3.fromRGB(255, 220, 130),
 	LightBrightness = 7, -- brighter so a key is a clear beacon down a dark corridor (was a faint 5)
 	LightRange = 20,
 	HoverHeight = 3, -- studs above the KeySpot marker
@@ -236,6 +245,61 @@ Config.Maze = table.freeze({
 	-- Verification + settle (the navmesh-safety gate).
 	NavmeshSettleSeconds = 1.5, -- wait after a carve before the path smoke test (tiles re-rasterize)
 	MaxCarveRetries = 6, -- re-seed this many times if the ComputeAsync smoke test fails, then fall back
+})
+
+-- Per-round maze THEMES (replayability via visual variety) -----------------------
+-- Each round the maze picks a theme: a wall palette + an Atmosphere/grade COLOUR remix, so no two
+-- rounds look the same. COLOUR ONLY -- themes never touch Lighting Brightness/Ambient or Atmosphere
+-- Density (the navigability-critical values Config.Environment guards), so a themed round is recoloured
+-- but never darker/foggier than the tuned baseline. MazeService recolours the walls (by the same
+-- position-bucket as WallVariation) + broadcasts the index; EnvironmentService applies the atmosphere/
+-- grade tint. Empty list = the static look (no themes). The first entry mirrors Config.Environment so
+-- "Derelict" reads identically to the un-themed baseline.
+Config.MazeThemes = table.freeze({
+	table.freeze({
+		Name = "Derelict", -- the cold grey baseline (== Config.Environment)
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(70, 74, 70), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(80, 71, 62), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(60, 66, 72), Material = Enum.Material.Cobblestone }),
+		}),
+		AtmosphereColor = Color3.fromRGB(150, 150, 162),
+		AtmosphereDecay = Color3.fromRGB(70, 70, 85),
+		GradeTint = Color3.fromRGB(206, 212, 224),
+	}),
+	table.freeze({
+		Name = "Boiler", -- rusted industrial, warm amber haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(86, 60, 44), Material = Enum.Material.CorrodedMetal }),
+			table.freeze({ Color = Color3.fromRGB(74, 58, 48), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(92, 66, 40), Material = Enum.Material.Brick }),
+		}),
+		AtmosphereColor = Color3.fromRGB(170, 140, 110),
+		AtmosphereDecay = Color3.fromRGB(90, 64, 44),
+		GradeTint = Color3.fromRGB(230, 200, 170),
+	}),
+	table.freeze({
+		Name = "Cryo", -- cold blue-white morgue, icy haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(64, 72, 84), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(72, 80, 90), Material = Enum.Material.Metal }),
+			table.freeze({ Color = Color3.fromRGB(58, 68, 80), Material = Enum.Material.Concrete }),
+		}),
+		AtmosphereColor = Color3.fromRGB(140, 160, 185),
+		AtmosphereDecay = Color3.fromRGB(60, 74, 96),
+		GradeTint = Color3.fromRGB(196, 212, 235),
+	}),
+	table.freeze({
+		Name = "Overgrown", -- mossy, sickly green haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(62, 72, 56), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(70, 76, 60), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(56, 66, 50), Material = Enum.Material.Cobblestone }),
+		}),
+		AtmosphereColor = Color3.fromRGB(140, 158, 130),
+		AtmosphereDecay = Color3.fromRGB(58, 72, 54),
+		GradeTint = Color3.fromRGB(200, 214, 196),
+	}),
 })
 
 -- Round loop --------------------------------------------------------------------
@@ -969,6 +1033,7 @@ Config.Radar = table.freeze({
 Config.Economy = table.freeze({
 	ParticipationFloor = 5, -- coins just for playing the round
 	KeyReward = 10, -- coins per key the team held at round end
+	BonusKeyReward = 20, -- coins per OPTIONAL gold bonus key grabbed (more than a normal key -- it's the risky detour)
 	EscapeBonus = 50, -- coins for reaching the exit
 	-- Bonus on top of EscapeBonus when 2+ players escape the SAME round -- a small reward for
 	-- winning TOGETHER (an incentive to cooperate, not just share a lobby). Kept SUBLINEAR (well
@@ -1008,6 +1073,15 @@ Config.Feedback = table.freeze({
 	EscapedSuffix = "ESCAPED!", -- composed with the escapee's name: "Steve ESCAPED!"
 	EscapedColor = Color3.fromRGB(120, 230, 130),
 	EscapedToastSeconds = 3.0,
+
+	-- Co-op HUNT ALERT: when a monster starts actively hunting a TEAMMATE, everyone else gets a brief
+	-- toast ("Steve is being HUNTED!") so the team has situational awareness (help them or scatter) --
+	-- the hunted player already feels it via the chase sting/grade. Throttled per target so a monster
+	-- losing + re-acquiring the same player in quick succession can't spam the lobby.
+	HuntedSuffix = "is being HUNTED!", -- composed with the target's name
+	HuntedColor = Color3.fromRGB(235, 90, 70),
+	HuntedToastSeconds = 2.5,
+	HuntAlertCooldown = 6, -- min seconds between hunt alerts for the SAME player (server-side throttle)
 })
 
 -- Chase FX: the hunt as a visual event ------------------------------------------

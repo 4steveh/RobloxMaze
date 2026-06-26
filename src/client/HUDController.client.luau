@@ -432,6 +432,20 @@ local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
 local exitLockedRemote = Remotes.get(Remotes.Names.ExitLocked)
 local exitOpenedRemote = Remotes.get(Remotes.Names.ExitOpened)
+local huntingAlertRemote = Remotes.get(Remotes.Names.HuntingAlert)
+
+-- Co-op situational awareness: a monster just started hunting a TEAMMATE. The hunted player
+-- already feels it (chase sting/grade), so only show the alert to OTHERS -- "Steve is being HUNTED!"
+huntingAlertRemote.OnClientEvent:Connect(function(huntedName)
+	if not huntedName or huntedName == player.Name then
+		return
+	end
+	showToast(
+		string.format("%s %s", huntedName, Config.Feedback.HuntedSuffix),
+		Config.Feedback.HuntedColor,
+		Config.Feedback.HuntedToastSeconds
+	)
+end)
 
 -- Pip count syncs from the server-authoritative KeyCount attribute, so it is correct on
 -- pickup AND on a round reset to 0 (the remote below only drives the chime/toast juice).
@@ -442,6 +456,18 @@ end
 setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
 player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
 	setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
+end)
+
+-- Optional gold BONUS key grabbed (team count rises): a brief gold toast. Read off the server-
+-- mirrored BonusKeyCount attribute (no new remote) -- the coins themselves land at round end.
+local lastBonusKeys = player:GetAttribute(Attributes.BonusKeyCount) or 0
+player:GetAttributeChangedSignal(Attributes.BonusKeyCount):Connect(function()
+	local n = player:GetAttribute(Attributes.BonusKeyCount) or 0
+	if n > lastBonusKeys then
+		showToast("BONUS KEY!", HUD.ArrowColor, Config.Feedback.KeyToastSeconds)
+		playPickupPulse()
+	end
+	lastBonusKeys = n
 end)
 
 keyCollectedRemote.OnClientEvent:Connect(function(count, pickerName)
