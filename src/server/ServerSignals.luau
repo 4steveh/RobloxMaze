@@ -18,6 +18,7 @@ local Names = table.freeze({
 	RoundEnded = "RoundEnded", -- a round just ended (payload: { [player] = {keys, escaped, survivalSeconds} }); EconomyService awards coins BEFORE RoundReset clears state
 	NoiseEvent = "NoiseEvent", -- a loud WORLD event happened at a point (payload: position Vector3); the near-blind monkey "hears" it and investigates -- e.g. a sprung trap pulls it toward the trap (TrapService fires this; MonsterService routes it into the monkey's senses)
 	MazeRebuilt = "MazeRebuilt", -- the runtime maze just re-carved + settled (no payload); MazeService is the PRODUCER (resets FIRST), and Key/Monster/etc. wait on this before re-arming so they never path against a half-built maze
+	MazeThemeSelected = "MazeThemeSelected", -- the maze just picked a per-round visual THEME (payload: theme index into Config.MazeThemes); MazeService recolors the walls + fires this, EnvironmentService remixes the Atmosphere/grade COLOUR to match (colour only -- never brightness/ambient, which are navigability-tuned)
 })
 
 local ServerSignals = {}

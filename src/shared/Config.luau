@@ -238,6 +238,61 @@ Config.Maze = table.freeze({
 	MaxCarveRetries = 6, -- re-seed this many times if the ComputeAsync smoke test fails, then fall back
 })
 
+-- Per-round maze THEMES (replayability via visual variety) -----------------------
+-- Each round the maze picks a theme: a wall palette + an Atmosphere/grade COLOUR remix, so no two
+-- rounds look the same. COLOUR ONLY -- themes never touch Lighting Brightness/Ambient or Atmosphere
+-- Density (the navigability-critical values Config.Environment guards), so a themed round is recoloured
+-- but never darker/foggier than the tuned baseline. MazeService recolours the walls (by the same
+-- position-bucket as WallVariation) + broadcasts the index; EnvironmentService applies the atmosphere/
+-- grade tint. Empty list = the static look (no themes). The first entry mirrors Config.Environment so
+-- "Derelict" reads identically to the un-themed baseline.
+Config.MazeThemes = table.freeze({
+	table.freeze({
+		Name = "Derelict", -- the cold grey baseline (== Config.Environment)
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(70, 74, 70), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(80, 71, 62), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(60, 66, 72), Material = Enum.Material.Cobblestone }),
+		}),
+		AtmosphereColor = Color3.fromRGB(150, 150, 162),
+		AtmosphereDecay = Color3.fromRGB(70, 70, 85),
+		GradeTint = Color3.fromRGB(206, 212, 224),
+	}),
+	table.freeze({
+		Name = "Boiler", -- rusted industrial, warm amber haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(86, 60, 44), Material = Enum.Material.CorrodedMetal }),
+			table.freeze({ Color = Color3.fromRGB(74, 58, 48), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(92, 66, 40), Material = Enum.Material.Brick }),
+		}),
+		AtmosphereColor = Color3.fromRGB(170, 140, 110),
+		AtmosphereDecay = Color3.fromRGB(90, 64, 44),
+		GradeTint = Color3.fromRGB(230, 200, 170),
+	}),
+	table.freeze({
+		Name = "Cryo", -- cold blue-white morgue, icy haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(64, 72, 84), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(72, 80, 90), Material = Enum.Material.Metal }),
+			table.freeze({ Color = Color3.fromRGB(58, 68, 80), Material = Enum.Material.Concrete }),
+		}),
+		AtmosphereColor = Color3.fromRGB(140, 160, 185),
+		AtmosphereDecay = Color3.fromRGB(60, 74, 96),
+		GradeTint = Color3.fromRGB(196, 212, 235),
+	}),
+	table.freeze({
+		Name = "Overgrown", -- mossy, sickly green haze
+		Walls = table.freeze({
+			table.freeze({ Color = Color3.fromRGB(62, 72, 56), Material = Enum.Material.Concrete }),
+			table.freeze({ Color = Color3.fromRGB(70, 76, 60), Material = Enum.Material.Slate }),
+			table.freeze({ Color = Color3.fromRGB(56, 66, 50), Material = Enum.Material.Cobblestone }),
+		}),
+		AtmosphereColor = Color3.fromRGB(140, 158, 130),
+		AtmosphereDecay = Color3.fromRGB(58, 72, 54),
+		GradeTint = Color3.fromRGB(200, 214, 196),
+	}),
+})
+
 -- Round loop --------------------------------------------------------------------
 -- The game LOOPS (it used to be single-shot: keys spawned once, a win latched forever).
 -- RoundService watches for a win (any player's GameState -> Won), holds a celebration,

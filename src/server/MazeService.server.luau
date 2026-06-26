@@ -27,8 +27,10 @@ local Tags = require(ReplicatedStorage.Tags)
 local ServerSignals = require(script.Parent.ServerSignals)
 
 local M = Config.Maze
+local THEMES = Config.MazeThemes -- per-round visual themes (wall palette + atmosphere); may be empty
 local SHARED = Config.Monster.Shared -- pathfinding agent dims (single source of truth)
 local mazeRebuilt = ServerSignals.get(ServerSignals.Names.MazeRebuilt)
+local mazeThemeSelected = ServerSignals.get(ServerSignals.Names.MazeThemeSelected)
 
 if not M.Enabled then
 	return -- static layout: leave the placed maze untouched
@@ -81,19 +83,26 @@ local function edgeGeom(edge: string): (Vector3, Vector3)
 	return Vector3.new(x, y, z), Vector3.new(M.CellSize + M.WallThickness, M.WallHeight, M.WallThickness)
 end
 
--- Regional wall variation: pick ONE {Color, Material} pair from the wall's WORLD POSITION so the
--- choice is STABLE per wall (same wall, same look every round) and CLUSTERS into contiguous zones
--- instead of a checkerboard. Bucketing on (cellX + cellZ) walks the same index along any single row
--- or column and only steps to the next pair across a diagonal band, so a corridor reads as one zone.
--- Empty/nil list -> the single flat WallColor/WallMaterial (current behaviour).
-local function wallLook(pos: Vector3): (Color3, Enum.Material)
-	local variants = M.WallVariation
-	if not variants or #variants == 0 then
+-- Position bucket: pick ONE index from a wall's WORLD POSITION so the choice is STABLE per wall and
+-- CLUSTERS into contiguous zones (not a checkerboard). Bucketing on (cellX + cellZ) walks the same
+-- index along any single row/column and only steps across a diagonal band, so a corridor reads as
+-- one zone. Lua's % with a positive divisor is non-negative even at the maze's negative origin.
+local function paletteIndex(pos: Vector3, n: number): number
+	return (math.floor(pos.X / M.CellSize) + math.floor(pos.Z / M.CellSize)) % n + 1
+end
+
+-- A {Color, Material} pair for a wall from a palette (the static WallVariation, or a theme's Walls).
+-- Empty/nil palette -> the single flat WallColor/WallMaterial (current behaviour).
+local function paletteLook(pos: Vector3, palette): (Color3, Enum.Material)
+	if not palette or #palette == 0 then
 		return M.WallColor, M.WallMaterial
 	end
-	local band = math.floor(pos.X / M.CellSize) + math.floor(pos.Z / M.CellSize)
-	local pair = variants[band % #variants + 1]
+	local pair = palette[paletteIndex(pos, #palette)]
 	return pair.Color, pair.Material
+end
+
+local function wallLook(pos: Vector3): (Color3, Enum.Material)
+	return paletteLook(pos, M.WallVariation)
 end
 
 local function makeWall(name: string, pos: Vector3, size: Vector3): BasePart
@@ -283,6 +292,21 @@ local function carveOnce(): boolean
 	return false
 end
 
+-- Apply a per-round THEME's wall palette by REPAINTING every maze wall (the superstructure is built
+-- once, so a theme just recolours it -- ~200 parts, once per round). Skips the tagged ExitGate
+-- (ExitService owns its look). Uses the same position bucket as the static variation so zones stay
+-- coherent; X/Z-only bucketing means an open wall sitting in its well is repainted correctly too.
+local function recolorWalls(theme)
+	if not (theme and theme.Walls) then
+		return
+	end
+	for _, part in maze:GetChildren() do
+		if part:IsA("BasePart") and not CollectionService:HasTag(part, Tags.ExitGate) then
+			part.Color, part.Material = paletteLook(part.Position, theme.Walls)
+		end
+	end
+end
+
 -- Carve, COALESCING re-carve requests: a RoundReset that arrives mid-carve is never dropped (which
 -- would silently reuse the previous round's maze) -- it runs once the in-flight carve finishes.
 local carving = false
@@ -296,6 +320,13 @@ local function carve()
 	repeat
 		pendingCarve = false
 		carveOnce()
+		-- Pick a per-round visual THEME: repaint the walls + tell EnvironmentService to remix the
+		-- Atmosphere/grade COLOUR. Colour-only (never brightness/density), so navigability is unchanged.
+		if THEMES and #THEMES > 0 then
+			local idx = Random.new():NextInteger(1, #THEMES)
+			recolorWalls(THEMES[idx])
+			mazeThemeSelected:Fire(idx)
+		end
 		mazeRebuilt:Fire() -- announce ready (MonsterService gates its hunt on this)
 	until not pendingCarve
 	carving = false
