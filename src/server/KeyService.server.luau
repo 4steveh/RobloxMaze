@@ -33,29 +33,39 @@ Remotes.init()
 local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 
 local teamKeyCount = 0 -- ONE shared count for the whole lobby (survives any player's respawn)
-local liveKeys = {} -- array of currently-collectible key parts
-local keyBase = {} -- key part -> its BASE hover Vector3 (marker + HoverHeight); the bob oscillates Y about this
+local liveKeys = {} -- array of currently-collectible REQUIRED key parts (green; gate the exit)
+local liveBonusKeys = {} -- array of currently-collectible OPTIONAL bonus key parts (gold; coins only)
+local teamBonusKeys = 0 -- shared count of bonus keys grabbed this round
+local keyBase = {} -- key part (required OR bonus) -> its BASE hover Vector3; the bob oscillates Y about this
 local rng = Random.new()
 
 local keysFolder = Instance.new("Folder")
 keysFolder.Name = WorldFolders.Keys
 keysFolder.Parent = Workspace
 
-local function makeKey(position)
+-- Build a collectible key. `bonus` = an OPTIONAL gold key (coins only, not required, NOT compass-
+-- beaconed) vs a required green key. The two share the whole model + the bob/spin, recoloured so
+-- they read as clearly different objects.
+local function makeKey(position, bonus)
 	-- The collectible is the ornate skeleton-key mesh (ServerStorage.Assets.KeyModel) if
-	-- present, else a glowing placeholder block. An eerie green PointLight + the slow spin
-	-- (below) make it read down a dark corridor.
+	-- present, else a glowing placeholder block. A PointLight + the slow spin (below) make it
+	-- read down a dark corridor -- green for a required key, gold for an optional bonus key.
+	local KM = Config.KeyModel
+	local bodyColor = if bonus then KM.BonusColor else KM.Color
+	local lightColor = if bonus then KM.BonusLightColor else KM.LightColor
+	local sparkleColor = if bonus then KM.BonusSparkleColor else KM.SparkleColor
 	local assets = ServerStorage:FindFirstChild("Assets")
 	local meshSrc = assets and assets:FindFirstChild("KeyModel")
 	local key
 	if meshSrc and meshSrc:IsA("BasePart") then
 		key = meshSrc:Clone()
 		key:ClearAllChildren()
+		key.Color = bodyColor -- tint the mesh too, so a bonus key reads gold even with the asset
 	else
 		key = Instance.new("Part")
 		key.Material = Enum.Material.Neon
 		key.Size = Config.KeyModel.Size
-		key.Color = Config.KeyModel.Color
+		key.Color = bodyColor
 	end
 	key.Name = "Key"
 	key.Anchored = true
@@ -70,7 +80,7 @@ local function makeKey(position)
 	key.CFrame = CFrame.new(base)
 
 	local light = Instance.new("PointLight")
-	light.Color = Config.KeyModel.LightColor
+	light.Color = lightColor
 	light.Brightness = Config.KeyModel.LightBrightness
 	light.Range = Config.KeyModel.LightRange
 	light.Parent = key
@@ -78,7 +88,7 @@ local function makeKey(position)
 	-- A few slow motes rising off the key so it glints like treasure down a dark corridor.
 	local sparkle = Instance.new("ParticleEmitter")
 	sparkle.Texture = Config.KeyModel.SparkleTexture
-	sparkle.Color = ColorSequence.new(Config.KeyModel.SparkleColor)
+	sparkle.Color = ColorSequence.new(sparkleColor)
 	sparkle.Size = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0),
 		NumberSequenceKeypoint.new(0.4, Config.KeyModel.SparkleSize),
@@ -97,10 +107,16 @@ local function makeKey(position)
 	sparkle.Parent = key
 
 	key.Parent = keysFolder
-	-- Tag it so the client compass can beacon live keys (tag-based discovery, not a
-	-- hardcoded path). Removed implicitly on Destroy when collected.
-	CollectionService:AddTag(key, Tags.ActiveKey)
-	table.insert(liveKeys, key)
+	if bonus then
+		-- Bonus keys are a DISCOVERABLE detour: NOT compass-beaconed (no ActiveKey tag), so you
+		-- find them by exploring the dangerous corners, not by being led there.
+		table.insert(liveBonusKeys, key)
+	else
+		-- Tag it so the client compass can beacon live REQUIRED keys (tag-based discovery, not a
+		-- hardcoded path). Removed implicitly on Destroy when collected.
+		CollectionService:AddTag(key, Tags.ActiveKey)
+		table.insert(liveKeys, key)
+	end
 end
 
 -- A slow hypnotic spin PLUS a gentle vertical bob so a glowing key floats and catches the
@@ -115,12 +131,10 @@ RunService.Heartbeat:Connect(function(dt)
 	bobClock += dt
 	local bobOffset = math.sin(bobClock * Config.KeyModel.BobSpeed) * Config.KeyModel.BobHeight
 	local spin = CFrame.Angles(0, spinClock, 0)
-	for _, key in liveKeys do
+	-- Iterate keyBase so BOTH required and bonus keys float (every live key has a base entry).
+	for key, base in keyBase do
 		if key.Parent then
-			local base = keyBase[key]
-			if base then
-				key.CFrame = CFrame.new(base.X, base.Y + bobOffset, base.Z) * spin
-			end
+			key.CFrame = CFrame.new(base.X, base.Y + bobOffset, base.Z) * spin
 		end
 	end
 end)
@@ -187,6 +201,13 @@ local function spawnRoundKeys()
 	for i = 1, count do
 		makeKey(ordered[i].Position)
 	end
+	-- Then the OPTIONAL gold bonus keys at the NEXT unused spots (the farther, riskier ones, since
+	-- `ordered` is far-first) -- never stealing a required-key spot. Degrades to fewer/none on a
+	-- layout with few KeySpots.
+	local bonusCount = math.min(Config.Keys.BonusSpawnPerRound, #ordered - count)
+	for i = count + 1, count + bonusCount do
+		makeKey(ordered[i].Position, true)
+	end
 end
 
 -- Mirror the shared team count onto every player's KeyCount attribute (HUD, ExitService,
@@ -198,9 +219,19 @@ local function setTeamCount(count)
 	end
 end
 
+-- Mirror the shared bonus count onto every player's BonusKeyCount (RoundService reads it into the
+-- round summary for the coin bonus; the HUD toasts off its increase). Same pattern as setTeamCount.
+local function setBonusCount(count)
+	teamBonusKeys = count
+	for _, player in Players:GetPlayers() do
+		player:SetAttribute(Attributes.BonusKeyCount, count)
+	end
+end
+
 -- A joiner (or rejoiner) syncs to the team's current progress, never to 0 mid-round.
 local function onPlayerAdded(player)
 	player:SetAttribute(Attributes.KeyCount, teamKeyCount)
+	player:SetAttribute(Attributes.BonusKeyCount, teamBonusKeys)
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
 for _, player in Players:GetPlayers() do
@@ -219,11 +250,19 @@ local function clearKeys()
 		end
 	end
 	table.clear(liveKeys)
+	for _, key in liveBonusKeys do
+		keyBase[key] = nil
+		if key.Parent then
+			key:Destroy()
+		end
+	end
+	table.clear(liveBonusKeys)
 end
 
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	clearKeys()
 	setTeamCount(0)
+	setBonusCount(0)
 	spawnRoundKeys()
 end)
 
@@ -251,6 +290,19 @@ local function processPlayerPickups(player)
 			for _, p in Players:GetPlayers() do
 				keyCollectedRemote:FireClient(p, teamKeyCount, player.Name)
 			end
+		end
+	end
+	-- Bonus (gold) keys: a parallel scan. A pickup advances the shared bonus count (mirrored to
+	-- BonusKeyCount); no pip/chime -- the HUD toasts off the attribute, and the coins land at round end.
+	for index = #liveBonusKeys, 1, -1 do
+		local key = liveBonusKeys[index]
+		if not key.Parent then
+			table.remove(liveBonusKeys, index)
+		elseif Spatial.withinRange(rootPart.Position, key.Position, Config.Spatial.KeyPickupRadius) then
+			table.remove(liveBonusKeys, index)
+			keyBase[key] = nil
+			key:Destroy()
+			setBonusCount(teamBonusKeys + 1)
 		end
 	end
 end

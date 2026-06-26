@@ -74,6 +74,10 @@ Config.Keys = table.freeze({
 	RequiredToWin = 3, -- keys the player must hold to open the exit
 	SpawnPerRound = 3, -- keys placed in the maze each round (random subset of KeySpot markers)
 	NoSpawnNearStartRadius = 26, -- studs: keys never spawn this close to a PlayerStart, so you can't auto-collect one the instant you spawn (you must go FIND them)
+	-- OPTIONAL bonus keys (gold): spawned at the NEXT unused KeySpots after the required ones (the
+	-- farther, more dangerous spots), NOT required to win + NOT beaconed by the compass -- a pure
+	-- risk/reward detour worth round-end coins. 0 disables them. They never reduce required-key spots.
+	BonusSpawnPerRound = 2,
 })
 
 -- Key model (the collectible's placeholder visuals) -----------------------------
@@ -83,6 +87,11 @@ Config.KeyModel = table.freeze({
 	Size = Vector3.new(1.6, 2.6, 0.5), -- studs
 	Color = Color3.fromRGB(64, 74, 58), -- desaturated, sickly
 	LightColor = Color3.fromRGB(125, 205, 95), -- eerie glow
+	-- Bonus keys reuse this whole model but recoloured GOLD, so they read as clearly DIFFERENT from the
+	-- green required keys (treasure you may grab, not an objective you must). KeyService applies these.
+	BonusColor = Color3.fromRGB(120, 96, 36), -- desaturated old-gold body
+	BonusLightColor = Color3.fromRGB(255, 205, 90), -- warm gold glow
+	BonusSparkleColor = Color3.fromRGB(255, 220, 130),
 	LightBrightness = 7, -- brighter so a key is a clear beacon down a dark corridor (was a faint 5)
 	LightRange = 20,
 	HoverHeight = 3, -- studs above the KeySpot marker
@@ -1024,6 +1033,7 @@ Config.Radar = table.freeze({
 Config.Economy = table.freeze({
 	ParticipationFloor = 5, -- coins just for playing the round
 	KeyReward = 10, -- coins per key the team held at round end
+	BonusKeyReward = 20, -- coins per OPTIONAL gold bonus key grabbed (more than a normal key -- it's the risky detour)
 	EscapeBonus = 50, -- coins for reaching the exit
 	-- Bonus on top of EscapeBonus when 2+ players escape the SAME round -- a small reward for
 	-- winning TOGETHER (an incentive to cooperate, not just share a lobby). Kept SUBLINEAR (well

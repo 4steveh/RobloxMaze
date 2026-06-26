@@ -458,6 +458,18 @@ player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
 	setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
 end)
 
+-- Optional gold BONUS key grabbed (team count rises): a brief gold toast. Read off the server-
+-- mirrored BonusKeyCount attribute (no new remote) -- the coins themselves land at round end.
+local lastBonusKeys = player:GetAttribute(Attributes.BonusKeyCount) or 0
+player:GetAttributeChangedSignal(Attributes.BonusKeyCount):Connect(function()
+	local n = player:GetAttribute(Attributes.BonusKeyCount) or 0
+	if n > lastBonusKeys then
+		showToast("BONUS KEY!", HUD.ArrowColor, Config.Feedback.KeyToastSeconds)
+		playPickupPulse()
+	end
+	lastBonusKeys = n
+end)
+
 keyCollectedRemote.OnClientEvent:Connect(function(count, pickerName)
 	count = count or keyCount
 	-- A teammate's pickup is ATTRIBUTED ("Steve got a key 2/3"); your own stays the plain "KEY n/3".
