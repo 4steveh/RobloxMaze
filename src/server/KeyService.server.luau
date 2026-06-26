@@ -34,6 +34,7 @@ local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 
 local teamKeyCount = 0 -- ONE shared count for the whole lobby (survives any player's respawn)
 local liveKeys = {} -- array of currently-collectible key parts
+local keyBase = {} -- key part -> its BASE hover Vector3 (marker + HoverHeight); the bob oscillates Y about this
 local rng = Random.new()
 
 local keysFolder = Instance.new("Folder")
@@ -61,7 +62,12 @@ local function makeKey(position)
 	key.CanCollide = false
 	key.CanQuery = false
 	key.CastShadow = false
-	key.CFrame = CFrame.new(position + Vector3.new(0, Config.KeyModel.HoverHeight, 0))
+	-- Remember the hover position the key was created AT (marker + HoverHeight). The
+	-- Heartbeat loop oscillates Y about this base each frame for the bob; the pickup scan
+	-- reads X/Z only, so bobbing Y never affects collection.
+	local base = position + Vector3.new(0, Config.KeyModel.HoverHeight, 0)
+	keyBase[key] = base
+	key.CFrame = CFrame.new(base)
 
 	local light = Instance.new("PointLight")
 	light.Color = Config.KeyModel.LightColor
@@ -97,13 +103,24 @@ local function makeKey(position)
 	table.insert(liveKeys, key)
 end
 
--- A slow hypnotic spin so a glowing key catches the eye down a corridor. Anchored +
--- rotation about its own centre, so the pickup's flat position is unchanged.
+-- A slow hypnotic spin PLUS a gentle vertical bob so a glowing key floats and catches the
+-- eye down a corridor. Both are cosmetic: the spin is yaw-only and the bob only moves Y about
+-- each key's stored base, so the pickup's flat X/Z position is unchanged. We accumulate our
+-- own clock/yaw from dt (rebuilding the CFrame from base each frame, rather than multiplying
+-- into the live CFrame, so the bob can't drift the key's height over time).
+local spinClock = 0 -- accumulated yaw angle (rad), advanced by SpinSpeed
+local bobClock = 0 -- accumulated phase (s) feeding the bob sine
 RunService.Heartbeat:Connect(function(dt)
-	local step = CFrame.Angles(0, Config.KeyModel.SpinSpeed * dt, 0)
+	spinClock += Config.KeyModel.SpinSpeed * dt
+	bobClock += dt
+	local bobOffset = math.sin(bobClock * Config.KeyModel.BobSpeed) * Config.KeyModel.BobHeight
+	local spin = CFrame.Angles(0, spinClock, 0)
 	for _, key in liveKeys do
 		if key.Parent then
-			key.CFrame = key.CFrame * step
+			local base = keyBase[key]
+			if base then
+				key.CFrame = CFrame.new(base.X, base.Y + bobOffset, base.Z) * spin
+			end
 		end
 	end
 end)
@@ -196,6 +213,7 @@ spawnRoundKeys()
 -- (the attribute change re-syncs the HUD/objective), and re-randomize a fresh key layout.
 local function clearKeys()
 	for _, key in liveKeys do
+		keyBase[key] = nil -- drop the base entry so the table can't leak across rounds
 		if key.Parent then
 			key:Destroy()
 		end
@@ -224,6 +242,7 @@ local function processPlayerPickups(player)
 			table.remove(liveKeys, index) -- already gone
 		elseif Spatial.withinRange(rootPart.Position, key.Position, Config.Spatial.KeyPickupRadius) then
 			table.remove(liveKeys, index) -- claim it before doing anything else
+			keyBase[key] = nil -- forget its bob base so the table doesn't leak
 			key:Destroy()
 			-- Advances the shared team count; tell EVERY player (their HUD pip fills, the chime
 			-- + "KEY n/3" toast fires) so the lobby sees co-op progress, not just the finder.

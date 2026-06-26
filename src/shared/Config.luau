@@ -52,6 +52,21 @@ Config.Flashlight = table.freeze({
 	MonsterFlickerStartDistance = 28, -- studs: only a CLOSE hunter stutters the beam (was too eager at 40)
 	MonsterFlickerMaxScale = 0.28, -- max fraction of brightness the stutter can subtract: a fear beat, never a blackout
 	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
+
+	-- Volumetric beam SHAFT (render-only, client): a faint cone of light riding the SpotLight, so
+	-- sweeping the flashlight reads as a physical shaft cutting the dark (together with the dust motes
+	-- AtmosphereFX adds). Built as a Beam on the emitter (FaceCamera), so it always presents to the
+	-- viewer. Kept deliberately SUBTLE -- a hint of volume, never a solid bar of light. Enabled=false
+	-- removes it entirely (e.g. if a device renders beams poorly).
+	Beam = table.freeze({
+		Enabled = true,
+		Length = 24, -- studs the shaft reaches (< Range so it fades out before the lit pool ends)
+		WidthNear = 0.6, -- studs wide at the lens...
+		WidthFar = 9, -- ...flaring to this at the far end (a soft cone)
+		Color = Color3.fromRGB(228, 234, 245), -- cool white, matched to the beam
+		Transparency = 0.9, -- VERY faint at the lens (it fades to fully clear at the far end)
+		Brightness = 0.5, -- Beam.Brightness (additive glow); kept low so it never washes the scene
+	}),
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -68,16 +83,20 @@ Config.KeyModel = table.freeze({
 	Size = Vector3.new(1.6, 2.6, 0.5), -- studs
 	Color = Color3.fromRGB(64, 74, 58), -- desaturated, sickly
 	LightColor = Color3.fromRGB(125, 205, 95), -- eerie glow
-	LightBrightness = 5,
-	LightRange = 16,
+	LightBrightness = 7, -- brighter so a key is a clear beacon down a dark corridor (was a faint 5)
+	LightRange = 20,
 	HoverHeight = 3, -- studs above the KeySpot marker
 	SpinSpeed = 1.1, -- rad/s the floating key slowly rotates (draws the eye)
+	-- A gentle vertical BOB on top of the spin, so the key FLOATS like a live, magical object (an
+	-- inert spinning part reads as scenery; a bobbing one reads as "pick me up"). KeyService applies it.
+	BobHeight = 0.45, -- studs the key rises/falls
+	BobSpeed = 2.2, -- rad/s of the bob cycle
 
 	-- Sparkle: a few slow motes glinting off the key so it reads as TREASURE down a dark
 	-- corridor (server-built ParticleEmitter, so it replicates -- the whole lobby sees it).
 	SparkleTexture = "rbxasset://textures/particles/sparkles_main.dds", -- built-in (no upload)
 	SparkleColor = Color3.fromRGB(175, 240, 135), -- echoes the key's green glow
-	SparkleRate = 7, -- motes/second
+	SparkleRate = 11, -- motes/second (more glint so it reads as treasure)
 	SparkleSize = 0.55, -- studs
 	SparkleLifetime = 1.3, -- seconds
 	SparkleSpeed = 1.5, -- studs/s upward drift
@@ -194,8 +213,19 @@ Config.Maze = table.freeze({
 	WallThickness = 2,
 	WallHeight = 14, -- floor-to-ceiling (matches the perimeter walls)
 	WellDepth = 20, -- studs an OPEN wall slides DOWN (its top ends well below the floor, hidden)
-	WallColor = Color3.fromRGB(70, 74, 70), -- matches the maze's slate walls
+	WallColor = Color3.fromRGB(70, 74, 70), -- matches the maze's slate walls (the fallback when WallVariation is empty)
 	WallMaterial = Enum.Material.Slate,
+
+	-- Regional wall variation: instead of one flat grey grid, walls cycle through these {Color, Material}
+	-- pairs by grid region, so corridors read as distinct ZONES (a cheap "this is a different part of the
+	-- building" tell in a procedural maze). Picked per wall from its world position when the superstructure
+	-- is built -- zero runtime cost. Materials stay rough + industrial so the place still reads as ONE
+	-- derelict structure, just with texture/tone variety. Empty = the single WallColor/WallMaterial above.
+	WallVariation = table.freeze({
+		table.freeze({ Color = Color3.fromRGB(70, 74, 70), Material = Enum.Material.Slate }), -- cold grey stone
+		table.freeze({ Color = Color3.fromRGB(80, 71, 62), Material = Enum.Material.Concrete }), -- grimy poured concrete
+		table.freeze({ Color = Color3.fromRGB(60, 66, 72), Material = Enum.Material.Cobblestone }), -- dank blue-grey block
+	}),
 
 	-- Generation.
 	BraidFraction = 0.08, -- open ~8% of extra edges (fewer dead-ends; only OPENS, can't disconnect)
@@ -435,9 +465,9 @@ Config.Monster = table.freeze({
 			BodyAssetName = "BunnyBody", -- the AI-generated MULTI-PART mascot (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -0.9, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
-			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a faint red "it's watching" glow that reads in the dark
-			EyeGlowBrightness = 0.7,
-			EyeGlowRange = 7,
+			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a red "it's watching" glow that reads in the dark
+			EyeGlowBrightness = 1.4, -- brighter so the eyes read as a menacing pair in the fog at idle (ChaseFX still flares them to 4.0 in a hunt)
+			EyeGlowRange = 9,
 		}),
 
 		-- The monkey: the near-blind NOISE hunter (escape by going QUIET). It HEARS the
@@ -488,8 +518,8 @@ Config.Monster = table.freeze({
 			ModelYOffset = -1.5, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
 			EyeGlowColor = Color3.fromRGB(250, 210, 60), -- sickly yellow (vs bunny red): instant species read in the dark
-			EyeGlowBrightness = 0.7,
-			EyeGlowRange = 7,
+			EyeGlowBrightness = 1.5, -- a touch brighter than the bunny -- the bigger silhouette's eyes loom harder in the dark
+			EyeGlowRange = 9,
 		}),
 	}),
 
@@ -629,6 +659,10 @@ Config.Decoy = table.freeze({
 	LightColor = Color3.fromRGB(255, 240, 150),
 	LightBrightness = 2.0,
 	LightRange = 12,
+	-- Visible LIFE while it rattles: a steady spin + a brightness flash on each noise pulse, so the
+	-- decoy reads as an active, attention-grabbing noisemaker (which is exactly what it is to the monkey).
+	SpinSpeed = 4.0, -- rad/s the anchored decoy spins as it rattles
+	PulseBrightnessScale = 2.0, -- the light flashes to this x its base brightness on each NoiseEvent pulse, then eases back
 	RattleSoundId = "rbxassetid://9119717523", -- the verified mechanical-click id (a rattling tick)
 	RattleVolume = 0.7,
 	RattleRange = 70, -- studs RollOffMaxDistance (it should read from a distance -- that's the point)
@@ -669,6 +703,14 @@ Config.Traps = table.freeze({
 	GlowPulseHz = 1.6, -- the glow gently pulses so a trap reads as "alive / dangerous", not decoration
 	GlowPulseDepth = 0.4, -- fraction of brightness the pulse dips (0..1)
 
+	-- A flat translucent danger PAD on the floor under each trap (server-built, replicated): the threat
+	-- ZONE reads as a clear red area you learn to avoid -- the red half of a red=danger / green=safe
+	-- language (SafeRooms get a green outline). Neon so it self-lights in the dark; sized to TriggerRadius.
+	-- Cosmetic only -- detection is the spatial poll, unchanged. TrapService builds it on each trap on boot.
+	PadColor = Color3.fromRGB(150, 26, 22),
+	PadTransparency = 0.55,
+	PadThickness = 0.1, -- studs (a thin disc lying just over the floor)
+
 	-- Fire effect (client renders a dart streaking along the arrow + an impact flash).
 	DartColor = Color3.fromRGB(200, 200, 210),
 	DartLength = 6, -- studs of the dart streak
@@ -678,6 +720,19 @@ Config.Traps = table.freeze({
 	ClickId = "rbxassetid://9119717523", -- mechanical click on wind-up
 	FireId = "rbxassetid://9120188626", -- a hard thunk on fire
 	FireVolume = 0.8,
+})
+
+-- Safe-room marking (server-built, replicated) ------------------------------------
+-- The one sanctuary was invisible from outside (a trigger volume with only a client grade on ENTRY).
+-- A calm green outline + soft glow on each SafeRoom makes safety FINDABLE down a corridor -- the green
+-- half of the red=danger (trap pad) / green=safe language. SafeRoomService owns occupancy detection;
+-- this is just the cosmetic tell it also builds on boot (one SelectionBox + one PointLight per room).
+Config.SafeRoom = table.freeze({
+	OutlineColor = Color3.fromRGB(90, 220, 130), -- calm green: the inverse of the trap's red
+	OutlineTransparency = 0.4,
+	GlowColor = Color3.fromRGB(120, 230, 150),
+	GlowBrightness = 1.1, -- a gentle inviting glow (not a beacon -- it shouldn't outshine the keys/exit)
+	GlowRange = 20,
 })
 
 -- Lighting / atmosphere ---------------------------------------------------------

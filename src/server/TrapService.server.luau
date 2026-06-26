@@ -80,12 +80,42 @@ local function ensureGlow(part: BasePart)
 	glow.Shadows = false
 end
 
+-- Ensure each trap sits on a flat translucent-red DANGER PAD on the floor (adopt an existing
+-- placed "TrapPad" child or create one) -- so the hazard reads as a clear FOOTPRINT on the ground,
+-- not just a point glow, telling you exactly where NOT to step. The pad is a Cylinder lying flat:
+-- a Cylinder's circular faces are on its X axis, so we roll it 90deg about Z to point the round face
+-- up; its radius matches the actual TriggerRadius (the disc is the trigger footprint), Neon so it
+-- self-lights in the dark. Purely cosmetic (no collision/query/touch/shadow) and replicates to all.
+local function ensurePad(part: BasePart)
+	local pad = part:FindFirstChild("TrapPad")
+	if not (pad and pad:IsA("BasePart")) then
+		pad = Instance.new("Part")
+		pad.Name = "TrapPad"
+		pad.Shape = Enum.PartType.Cylinder
+		pad.Parent = part
+	end
+	pad.Size = Vector3.new(C.PadThickness, C.TriggerRadius * 2, C.TriggerRadius * 2)
+	pad.Material = Enum.Material.Neon
+	pad.Color = C.PadColor
+	pad.Transparency = C.PadTransparency
+	pad.Anchored = true
+	pad.CanCollide = false
+	pad.CanQuery = false
+	pad.CanTouch = false
+	pad.CastShadow = false
+	-- Drop the disc to just over the floor under the trap marker (its underside) and roll it flat so
+	-- the round face points straight up; a tiny epsilon lifts it off the floor to avoid z-fighting.
+	local floorY = part.Position.Y - part.Size.Y / 2 + 0.02
+	pad.CFrame = CFrame.new(part.Position.X, floorY, part.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+end
+
 -- [part] = { state = "armed"|"windup"|"cooldown", windupStart?, victim?, cooldownUntil? }
 local traps = {}
 Discovery.observe(Tags.Trap, function(part)
 	if part:IsA("BasePart") then
 		traps[part] = { state = "armed" }
 		ensureGlow(part)
+		ensurePad(part)
 	end
 end, function(part)
 	traps[part] = nil

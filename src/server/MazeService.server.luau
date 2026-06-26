@@ -81,14 +81,28 @@ local function edgeGeom(edge: string): (Vector3, Vector3)
 	return Vector3.new(x, y, z), Vector3.new(M.CellSize + M.WallThickness, M.WallHeight, M.WallThickness)
 end
 
+-- Regional wall variation: pick ONE {Color, Material} pair from the wall's WORLD POSITION so the
+-- choice is STABLE per wall (same wall, same look every round) and CLUSTERS into contiguous zones
+-- instead of a checkerboard. Bucketing on (cellX + cellZ) walks the same index along any single row
+-- or column and only steps to the next pair across a diagonal band, so a corridor reads as one zone.
+-- Empty/nil list -> the single flat WallColor/WallMaterial (current behaviour).
+local function wallLook(pos: Vector3): (Color3, Enum.Material)
+	local variants = M.WallVariation
+	if not variants or #variants == 0 then
+		return M.WallColor, M.WallMaterial
+	end
+	local band = math.floor(pos.X / M.CellSize) + math.floor(pos.Z / M.CellSize)
+	local pair = variants[band % #variants + 1]
+	return pair.Color, pair.Material
+end
+
 local function makeWall(name: string, pos: Vector3, size: Vector3): BasePart
 	local p = Instance.new("Part")
 	p.Name = name
 	p.Anchored = true
 	p.Size = size
 	p.Position = pos
-	p.Color = M.WallColor
-	p.Material = M.WallMaterial
+	p.Color, p.Material = wallLook(pos)
 	p.CanCollide = true
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
