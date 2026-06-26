@@ -37,6 +37,7 @@ bed(AM.RoomToneId, AM.RoomToneVolume)
 
 -- 3D music box on each tagged emitter (the mascot statue).
 local boxes = {} -- [part] = Sound
+local boxBase = {} -- [Sound] = per-drift-in base PlaybackSpeed (the wobble rides on top); set at each play
 Discovery.observe(Tags.MusicBoxEmitter, function(part)
 	if not part:IsA("BasePart") or boxes[part] then
 		return
@@ -54,6 +55,7 @@ Discovery.observe(Tags.MusicBoxEmitter, function(part)
 	boxes[part] = s
 end, function(part)
 	if boxes[part] then
+		boxBase[boxes[part]] = nil
 		boxes[part]:Destroy()
 		boxes[part] = nil
 	end
@@ -67,7 +69,7 @@ RunService.Heartbeat:Connect(function(dt)
 	local wobble = math.sin(boxClock * AM.MusicBoxWobbleHz * math.pi * 2) * AM.MusicBoxPitchWobble
 	for _, s in boxes do
 		if s.IsPlaying then
-			s.PlaybackSpeed = 1 + wobble
+			s.PlaybackSpeed = (boxBase[s] or 1) + wobble
 		end
 	end
 end)
@@ -81,6 +83,8 @@ task.spawn(function()
 			if s.Parent and not s.IsPlaying then
 				s.Volume = AM.MusicBoxVolume
 				s.TimePosition = rng:NextNumber(0, AM.MusicBoxStartRange)
+				-- A fresh random base pitch for this drift-in, so no two are quite the same.
+				boxBase[s] = 1 + rng:NextNumber(-AM.MusicBoxTransposeRange, AM.MusicBoxTransposeRange)
 				s:Play()
 				task.delay(AM.MusicBoxPlaySeconds, function()
 					if s.Parent and s.IsPlaying then

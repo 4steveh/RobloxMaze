@@ -1048,6 +1048,10 @@ Config.Audio = table.freeze({
 		MusicBoxPitchWobble = 0.06, -- +/- PlaybackSpeed wobble (a detuning music box)
 		MusicBoxWobbleHz = 0.4, -- Hz of the detune wobble
 		MusicBoxFadeSeconds = 1.5, -- fade-out time when a drift-in ends (vs an abrupt Stop)
+		-- Per-drift-in random TRANSPOSE: each play picks a fixed base PlaybackSpeed within +/- this of 1
+		-- (the continuous wobble rides on top), so no two drift-ins sit at the same pitch -- a haunted box
+		-- that's a little different every time, which fights habituation over a long session.
+		MusicBoxTransposeRange = 0.07,
 	}),
 
 	-- Monster cues: 3D breathing/footsteps on the rig + a non-spatial heartbeat the
@@ -1062,6 +1066,11 @@ Config.Audio = table.freeze({
 		FootstepStride = 3.5, -- studs the rig travels per footstep sound
 		ChaseStingId = "rbxassetid://1841353932", -- one-shot on Patrol->Chase
 		ChaseStingVolume = 0.75,
+		-- A SOFTER sting on entering Alert (the monkey heard you) -- the "it heard you" beat had only the
+		-- heartbeat ramp, no discrete hit. Reuses the verified chase-sting id, quieter + pitched down so
+		-- it reads as a warning, not the full chase commit (which still gets the louder ChaseSting above).
+		AlertStingVolume = 0.42,
+		AlertStingPitch = 0.85,
 		HeartbeatId = "rbxassetid://139481207162657", -- non-spatial, scaled by distance
 		HeartbeatVolume = 0.7,
 		HeartbeatStartDistance = 45, -- studs at which the heartbeat fades in (slow/faint)
@@ -1135,6 +1144,18 @@ Config.Audio = table.freeze({
 	Stingers = table.freeze({
 		KeyChimeId = "rbxassetid://7381723941", -- KeyCollected (UI bus)
 		KeyChimeVolume = 0.6,
+		-- The FINAL key (team hits RequiredToWin) is a triumphant beat the mix was missing -- a brighter,
+		-- louder flourish layered over the normal chime. Reuses the verified chime id, pitched UP so it
+		-- reads as "objective complete!" (distinct from the per-key chime and from the win jingle).
+		KeyCompleteId = "rbxassetid://7381723941",
+		KeyCompleteVolume = 0.85,
+		KeyCompletePitch = 1.35,
+		-- Entering a SafeRoom was acoustically invisible (only a reverb swap). A warm, low bell "exhale"
+		-- on entry gives the sanctuary an audible arrival to match SafeRoomFXController's visual bloom.
+		-- Reuses the verified chime id, pitched DOWN into a soft hearth tone (Ambient bus, low volume).
+		SafeRoomReliefId = "rbxassetid://7381723941",
+		SafeRoomReliefVolume = 0.4,
+		SafeRoomReliefPitch = 0.6,
 		LockedThunkId = "rbxassetid://9120188626", -- ExitLocked (SFX bus)
 		LockedThunkVolume = 0.65,
 		WinJingleId = "rbxassetid://9041792228", -- GameWon (Music bus)

@@ -28,9 +28,26 @@ local lockedThunk = stinger(ST.LockedThunkId, ST.LockedThunkVolume, "SFX")
 local winJingle = stinger(ST.WinJingleId, ST.WinJingleVolume, "Music")
 local exitHeave = stinger(Config.Exit.OpenSoundId, Config.Exit.OpenSoundVolume, "SFX") -- the gate sliding open
 local huntBegins = stinger(ST.HuntBeginsId, ST.HuntBeginsVolume, "Monster") -- the peace window ended
+local keyComplete = stinger(ST.KeyCompleteId, ST.KeyCompleteVolume, "UI") -- the all-keys flourish
+keyComplete.PlaybackSpeed = ST.KeyCompletePitch
+local safeRoomRelief = stinger(ST.SafeRoomReliefId, ST.SafeRoomReliefVolume, "Ambient") -- the "you're safe" exhale
+safeRoomRelief.PlaybackSpeed = ST.SafeRoomReliefPitch
 
-Remotes.get(Remotes.Names.KeyCollected).OnClientEvent:Connect(function()
+local requiredKeys = Config.Keys.RequiredToWin
+
+Remotes.get(Remotes.Names.KeyCollected).OnClientEvent:Connect(function(count)
 	keyChime:Play()
+	-- The FINAL key is the run's turning point ("now run for the exit") -- layer the triumphant
+	-- flourish over the chime and briefly lift the dread beds so the moment lands.
+	if count and count >= requiredKeys then
+		AudioGroups.duck("Ambient", 0.4, 1.0)
+		keyComplete:Play()
+	end
+end)
+
+-- Entering a SafeRoom: a warm low bell, the audible companion to the visual "SAFE" bloom.
+Remotes.get(Remotes.Names.SafeRoomEntered).OnClientEvent:Connect(function()
+	safeRoomRelief:Play()
 end)
 
 Remotes.get(Remotes.Names.ExitLocked).OnClientEvent:Connect(function()
