@@ -33,16 +33,9 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = playerGui
 
--- Placeholder feedback sounds: no asset IDs -- set SoundId to your own SFX.
-local function placeholderSound(name)
-	local sound = Instance.new("Sound")
-	sound.Name = name
-	sound.SoundId = "" -- TODO: drop in an asset id, e.g. "rbxassetid://..."
-	sound.Parent = gui
-	return sound
-end
-local keyCollectSound = placeholderSound("KeyCollectSound")
-local exitLockedSound = placeholderSound("ExitLockedSound")
+-- Event audio (key chime, locked-door thunk, win jingle, etc.) is owned ENTIRELY by
+-- StingerController, the single source for one-shot event SFX wired to the same remotes
+-- this HUD reads. The HUD renders visuals only -- no Sound instances live here.
 
 -- Key pips --------------------------------------------------------------------
 local pipsBasePosition = UDim2.new(0.5, 0, 0, HUD.PipTopOffset)
@@ -390,7 +383,6 @@ player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
 end)
 
 keyCollectedRemote.OnClientEvent:Connect(function(count)
-	keyCollectSound:Play()
 	count = count or keyCount
 	showToast(string.format("KEY %d/%d", count, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
 	popPip(count) -- the pip that just filled (index == the new team total)
@@ -421,7 +413,6 @@ player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
 end)
 
 exitLockedRemote.OnClientEvent:Connect(function()
-	exitLockedSound:Play()
 	showToast(
 		string.format("%s — NEED %d KEYS (have %d)", Config.Feedback.LockedTextPrefix, requiredKeys, keyCount),
 		HUD.BatteryLowColor,

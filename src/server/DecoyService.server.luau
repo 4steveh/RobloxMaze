@@ -77,9 +77,9 @@ local function landingPoint(player: Player): Vector3?
 	local restXZ = origin + up + flat * dist
 	local downHit = Workspace:Raycast(restXZ, Vector3.new(0, -40, 0), params)
 	if downHit then
-		return downHit.Position + Vector3.new(0, 0.6, 0)
+		return downHit.Position + Vector3.new(0, C.LandingHeight, 0)
 	end
-	return origin + flat * dist + Vector3.new(0, 0.6, 0)
+	return origin + flat * dist + Vector3.new(0, C.LandingHeight, 0)
 end
 
 local function spawnDecoy(position: Vector3)

@@ -213,25 +213,43 @@ local function refreshBeacon(other)
 	end
 end
 
+-- Per-other-player connections, so a departed player's signal handlers (and the closures
+-- that retain the Player object) are disconnected on leave instead of leaking every round.
+local connections = {} -- [otherPlayer] = { RBXScriptConnection }
+
 local function watch(other)
 	if other == player then
 		return
 	end
-	other:GetAttributeChangedSignal(Attributes.Downed):Connect(function()
-		refreshBeacon(other)
-	end)
-	other.CharacterAdded:Connect(function()
-		removeBeacon(other) -- stale adornee; re-evaluate against the fresh body
-		task.defer(refreshBeacon, other)
-	end)
+	connections[other] = {
+		other:GetAttributeChangedSignal(Attributes.Downed):Connect(function()
+			refreshBeacon(other)
+		end),
+		other.CharacterAdded:Connect(function()
+			removeBeacon(other) -- stale adornee; re-evaluate against the fresh body
+			task.defer(refreshBeacon, other)
+		end),
+	}
 	refreshBeacon(other)
+end
+
+-- Disconnect this player's signals AND drop their beacon (called on leave).
+local function unwatch(other)
+	local conns = connections[other]
+	if conns then
+		for _, c in conns do
+			c:Disconnect()
+		end
+		connections[other] = nil
+	end
+	removeBeacon(other)
 end
 
 Players.PlayerAdded:Connect(watch)
 for _, other in Players:GetPlayers() do
 	watch(other)
 end
-Players.PlayerRemoving:Connect(removeBeacon)
+Players.PlayerRemoving:Connect(unwatch)
 
 RunService.RenderStepped:Connect(function()
 	for other, bb in beacons do

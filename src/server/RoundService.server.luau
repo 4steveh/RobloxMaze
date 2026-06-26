@@ -76,9 +76,13 @@ local function onWin()
 	beginNewRound()
 end
 
+-- Per-player GameState connection, disconnected on leave so a departed player's handler
+-- (and the closure that retains the Player) doesn't accumulate across a long-lived server.
+local stateConns = {} -- [player] = RBXScriptConnection
+
 local function watch(player: Player)
 	joinClock[player] = os.clock()
-	player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
+	stateConns[player] = player:GetAttributeChangedSignal(Attributes.GameState):Connect(function()
 		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won and not resetting then
 			task.spawn(onWin)
 		end
@@ -88,6 +92,10 @@ end
 Players.PlayerAdded:Connect(watch)
 Players.PlayerRemoving:Connect(function(player)
 	joinClock[player] = nil
+	if stateConns[player] then
+		stateConns[player]:Disconnect()
+		stateConns[player] = nil
+	end
 end)
 for _, player in Players:GetPlayers() do
 	watch(player)

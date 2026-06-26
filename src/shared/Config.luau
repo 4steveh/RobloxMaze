@@ -597,6 +597,7 @@ Config.Decoy = table.freeze({
 	Cooldown = 8, -- seconds between throws (server-authoritative)
 	IntentRateLimit = 0.25, -- min seconds between accepted ThrowDecoy messages (anti-spam, hostile input)
 	WallPadding = 2.5, -- studs short of a hit wall the decoy lands (so it never lands inside geometry)
+	LandingHeight = 0.6, -- studs above the floor the decoy rests (so it reads as sitting ON the ground, not buried)
 	-- The monkey re-homes on each pulse, so a few spaced pulses keep it drawn to the spot while the
 	-- decoy rattles (each NoiseEvent is a fresh one-shot the monkey investigates).
 	NoisePulses = 3,

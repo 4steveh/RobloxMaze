@@ -289,10 +289,16 @@ function MonsterRig.build(species: string, cfg, spawnPart: BasePart, parent: Ins
 	rig:SetAttribute(Attributes.MonsterSpecies, species)
 	rig.Parent = parent
 
-	-- Keep physics authority on the server so server-driven MoveTo is honoured.
-	pcall(function()
+	-- Keep physics authority on the server so server-driven MoveTo is honoured. A SILENT
+	-- failure here would leave the rig client-owned -- a client could then MoveTo the monster,
+	-- breaking server authority -- so WARN (named) on failure instead of swallowing it, making
+	-- the exploit-relevant case visible in logs rather than an invisible loss of control.
+	local ownerOk, ownerErr = pcall(function()
 		root:SetNetworkOwner(nil)
 	end)
+	if not ownerOk then
+		warn(`[MonsterRig] SetNetworkOwner(nil) failed for the {species} rig (it may be client-owned): {ownerErr}`)
+	end
 	return rig
 end
 
