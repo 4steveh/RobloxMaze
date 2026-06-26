@@ -105,6 +105,11 @@ local function wallLook(pos: Vector3): (Color3, Enum.Material)
 	return paletteLook(pos, M.WallVariation)
 end
 
+-- Every wall MazeService builds (interior superstructure + both perimeter rows). The per-round
+-- theme recolours EXACTLY these -- never the placed floor / side walls / ExitGate that also live in
+-- the Maze folder (so a theme can never repaint the floor or a part we don't own).
+local builtWalls = {}
+
 local function makeWall(name: string, pos: Vector3, size: Vector3): BasePart
 	local p = Instance.new("Part")
 	p.Name = name
@@ -116,6 +121,7 @@ local function makeWall(name: string, pos: Vector3, size: Vector3): BasePart
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	p.Parent = maze
+	table.insert(builtWalls, p)
 	return p
 end
 
@@ -300,8 +306,9 @@ local function recolorWalls(theme)
 	if not (theme and theme.Walls) then
 		return
 	end
-	for _, part in maze:GetChildren() do
-		if part:IsA("BasePart") and not CollectionService:HasTag(part, Tags.ExitGate) then
+	-- Only the walls WE built (never the placed floor / side walls / ExitGate in the same folder).
+	for _, part in builtWalls do
+		if part.Parent then
 			part.Color, part.Material = paletteLook(part.Position, theme.Walls)
 		end
 	end
