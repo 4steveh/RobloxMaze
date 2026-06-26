@@ -57,18 +57,21 @@ applyMasterVolume()
 -- Re-apply whenever the master-volume pref changes (single writer, so this is the one apply path).
 player:GetAttributeChangedSignal(Attributes.SettingMasterVolume):Connect(applyMasterVolume)
 
--- High DisplayOrder + IgnoreGuiInset so the menu sits above the base HUD (and the shop at 25).
+-- High DisplayOrder so the menu sits above the base HUD (and the shop at 25). IgnoreGuiInset is
+-- FALSE so the gear button respects the Roblox topbar inset (same convention as the shop button),
+-- which keeps the gear from sitting under the topbar menu and lets it stack cleanly below the shop.
 local gui = Instance.new("ScreenGui")
 gui.Name = "Settings"
 gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
+gui.IgnoreGuiInset = false
 gui.DisplayOrder = 30
 gui.Parent = playerGui
 
--- Persistent gear button (top-left). Works on touch + click; the keys below also toggle the panel.
+-- Persistent gear button (top-left, below the shop's coin button). Works on touch + click; the keys
+-- below also toggle the panel. Positioned to clear both the Roblox topbar and the shop button.
 local gearBtn = Instance.new("TextButton")
 gearBtn.Name = "OpenSettings"
-gearBtn.Position = UDim2.fromOffset(S.ButtonMargin, S.ButtonMargin)
+gearBtn.Position = UDim2.fromOffset(S.ButtonLeft, S.ButtonTop)
 gearBtn.Size = UDim2.fromOffset(S.ButtonSize, S.ButtonSize)
 gearBtn.BackgroundColor3 = UI.PanelColor
 gearBtn.BackgroundTransparency = 0.25

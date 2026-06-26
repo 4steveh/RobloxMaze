@@ -1488,9 +1488,13 @@ Config.Settings = table.freeze({
 	DefaultMasterVolume = 1.0, -- 0..1 starting master volume
 	DefaultReduceFlashing = false,
 
-	-- The gear button (top-left -- the one screen corner the HUD/radar/player-list don't use).
+	-- The gear button: top-left, BELOW the shop's coin button (at y 70) so it clears BOTH the Roblox
+	-- topbar/menu (which sits at the very top-left) and the shop button. The objective tracker is
+	-- top-CENTRE, so this left column is otherwise free. Nudge ButtonTop if your device's topbar/shop
+	-- button overlap it.
 	ButtonSize = 46, -- px
-	ButtonMargin = 16, -- px from the top-left corner
+	ButtonLeft = 14, -- px from the left edge (aligned under the shop button)
+	ButtonTop = 112, -- px from the top (below the shop's coin button at ~70..104; clears the topbar)
 	GearLabel = "⚙",
 	GearColor = Color3.fromRGB(206, 210, 222),
 
@@ -1512,6 +1516,8 @@ Config.Settings = table.freeze({
 
 -- Shop open key (ShopController; was a hardcoded UserInputService 'B' -- moved here so a gamepad
 -- button can also open it, and so the keybind lives in Config like every other control).
+-- (ShopController already shows an always-visible top-left "SHOP <coins>" button that opens the
+-- panel on tap, so the shop is reachable on touch without a keyboard; these keys are just shortcuts.)
 Config.Shop = table.freeze({
 	OpenKey = Enum.KeyCode.B, -- keyboard key to open/close the cosmetics shop
 	GamepadOpenKey = Enum.KeyCode.DPadDown, -- gamepad: D-pad down opens the shop
