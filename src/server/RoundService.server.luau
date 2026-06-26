@@ -47,6 +47,13 @@ local function beginNewRound()
 	-- deep-copies its table args and does NOT preserve Instance KEYS, but Instance VALUES survive.
 	local summaries = {}
 	local now = os.clock()
+	-- How many escaped this round (for the co-op-win bonus: escaping together pays a little extra).
+	local escapedCount = 0
+	for _, player in Players:GetPlayers() do
+		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
+			escapedCount += 1
+		end
+	end
 	for _, player in Players:GetPlayers() do
 		local started = math.max(roundStartClock, joinClock[player] or roundStartClock)
 		table.insert(summaries, {
@@ -54,6 +61,7 @@ local function beginNewRound()
 			keys = player:GetAttribute(Attributes.KeyCount) or 0,
 			escaped = player:GetAttribute(Attributes.GameState) == Enums.GameState.Won,
 			survivalSeconds = now - started,
+			coopEscapers = escapedCount,
 		})
 	end
 	roundEnded:Fire(summaries)

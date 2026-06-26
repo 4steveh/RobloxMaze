@@ -245,10 +245,11 @@ local function processPlayerPickups(player)
 			keyBase[key] = nil -- forget its bob base so the table doesn't leak
 			key:Destroy()
 			-- Advances the shared team count; tell EVERY player (their HUD pip fills, the chime
-			-- + "KEY n/3" toast fires) so the lobby sees co-op progress, not just the finder.
+			-- + "KEY n/3" toast fires) so the lobby sees co-op progress, not just the finder. The
+			-- picker's name rides along so a teammate's pickup reads as attributed ("Steve got a key").
 			setTeamCount(teamKeyCount + 1)
 			for _, p in Players:GetPlayers() do
-				keyCollectedRemote:FireClient(p, teamKeyCount)
+				keyCollectedRemote:FireClient(p, teamKeyCount, player.Name)
 			end
 		end
 	end

@@ -970,6 +970,10 @@ Config.Economy = table.freeze({
 	ParticipationFloor = 5, -- coins just for playing the round
 	KeyReward = 10, -- coins per key the team held at round end
 	EscapeBonus = 50, -- coins for reaching the exit
+	-- Bonus on top of EscapeBonus when 2+ players escape the SAME round -- a small reward for
+	-- winning TOGETHER (an incentive to cooperate, not just share a lobby). Kept SUBLINEAR (well
+	-- under EscapeBonus) so solo play is never under-rewarded by comparison. 0 disables it.
+	CoopEscapeBonus = 25,
 	SurvivalPerSecond = 0.25, -- coins per second survived...
 	SurvivalCap = 240, -- ...capped at this many seconds (so camping isn't farmed)
 	ShopActionRateLimit = 0.2, -- min seconds between accepted ShopAction messages (anti-spam, hostile input)
@@ -995,6 +999,9 @@ Config.Feedback = table.freeze({
 	ToastColor = Color3.fromRGB(240, 230, 210),
 	CaughtText = "CAUGHT!",
 	CaughtColor = Color3.fromRGB(220, 60, 55),
+	-- Co-op key attribution: when a TEAMMATE grabs a key, the toast names them ("Steve got a key 2/3")
+	-- so the lobby SEES who's contributing -- shared progress reads as teamwork, not an anonymous tick.
+	KeyBySuffix = "got a key",
 	LockedTextPrefix = "EXIT LOCKED", -- shown with the live count: "EXIT LOCKED — 3 KEYS NEEDED"
 	-- Shown to OTHER players (not the escapee) when someone reaches the exit and the shared
 	-- round is about to reset -- so a co-op escape reads as an event, not a silent yank.

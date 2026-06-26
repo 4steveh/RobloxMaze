@@ -444,9 +444,16 @@ player:GetAttributeChangedSignal(Attributes.KeyCount):Connect(function()
 	setKeyCount(player:GetAttribute(Attributes.KeyCount) or 0)
 end)
 
-keyCollectedRemote.OnClientEvent:Connect(function(count)
+keyCollectedRemote.OnClientEvent:Connect(function(count, pickerName)
 	count = count or keyCount
-	showToast(string.format("KEY %d/%d", count, requiredKeys), nil, Config.Feedback.KeyToastSeconds)
+	-- A teammate's pickup is ATTRIBUTED ("Steve got a key 2/3"); your own stays the plain "KEY n/3".
+	local text
+	if pickerName and pickerName ~= player.Name then
+		text = string.format("%s %s  %d/%d", pickerName, Config.Feedback.KeyBySuffix, count, requiredKeys)
+	else
+		text = string.format("KEY %d/%d", count, requiredKeys)
+	end
+	showToast(text, nil, Config.Feedback.KeyToastSeconds)
 	popPip(count) -- the pip that just filled (index == the new team total)
 	playPickupPulse() -- a screen-wide flash so a mid-chase pickup is never missed
 end)
