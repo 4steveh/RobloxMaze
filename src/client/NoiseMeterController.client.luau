@@ -35,6 +35,16 @@ panel.Parent = gui
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 4)
 corner.Parent = panel
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = Config.UI.StrokeColor
+panelStroke.Transparency = Config.UI.StrokeTransparency
+panelStroke.Thickness = Config.UI.StrokeThickness
+panelStroke.Parent = panel
+local panelGrad = Instance.new("UIGradient")
+panelGrad.Color =
+	ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1):Lerp(Color3.new(0, 0, 0), Config.UI.PanelGradientDarken))
+panelGrad.Rotation = 90
+panelGrad.Parent = panel
 
 local fill = Instance.new("Frame")
 fill.AnchorPoint = Vector2.new(0, 0.5)
@@ -62,11 +72,11 @@ label.AnchorPoint = Vector2.new(1, 1)
 label.Position = UDim2.new(1, 0, 0, -2)
 label.Size = UDim2.fromOffset(N.MeterWidth, 16)
 label.BackgroundTransparency = 1
-label.Font = Enum.Font.GothamMedium
+label.Font = Config.UI.SubheadingFont
 label.TextSize = 12
 label.TextXAlignment = Enum.TextXAlignment.Right
 label.TextColor3 = N.MeterQuietColor
-label.TextStrokeTransparency = 0.5
+label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 label.Text = N.MeterLabel
 label.Parent = panel
 

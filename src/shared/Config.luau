@@ -7,6 +7,19 @@
 
 local Config = {}
 
+-- Font resolution ----------------------------------------------------------------
+-- The UI theme (Config.UI below) wants modern faces (Builder Sans, Creepster) that may not
+-- exist on every engine/client. Indexing a missing Enum.Font member THROWS, which -- in a frozen,
+-- load-time Config -- would brick the entire game. So resolve fonts by NAME against the live
+-- Enum.Font set and fall back cleanly when a face is unavailable. Built once here, at load.
+local fontByName: { [string]: EnumItem } = {}
+for _, item in Enum.Font:GetEnumItems() do
+	fontByName[item.Name] = item
+end
+local function uiFont(name: string, fallback: EnumItem): EnumItem
+	return fontByName[name] or fallback
+end
+
 -- Flashlight --------------------------------------------------------------------
 -- The one deliberate client-side resource: uncontested, latency-sensitive, and
 -- nothing else depends on it (see CLAUDE.md). Battery is measured in "seconds of
@@ -59,6 +72,15 @@ Config.KeyModel = table.freeze({
 	LightRange = 16,
 	HoverHeight = 3, -- studs above the KeySpot marker
 	SpinSpeed = 1.1, -- rad/s the floating key slowly rotates (draws the eye)
+
+	-- Sparkle: a few slow motes glinting off the key so it reads as TREASURE down a dark
+	-- corridor (server-built ParticleEmitter, so it replicates -- the whole lobby sees it).
+	SparkleTexture = "rbxasset://textures/particles/sparkles_main.dds", -- built-in (no upload)
+	SparkleColor = Color3.fromRGB(175, 240, 135), -- echoes the key's green glow
+	SparkleRate = 7, -- motes/second
+	SparkleSize = 0.55, -- studs
+	SparkleLifetime = 1.3, -- seconds
+	SparkleSpeed = 1.5, -- studs/s upward drift
 })
 
 -- Spatial detection -------------------------------------------------------------
@@ -1090,6 +1112,119 @@ Config.Audio = table.freeze({
 		JumpscareId = "rbxassetid://139306955269282", -- MonsterCaught (full-volume, ducks others)
 		JumpscareVolume = 1.0,
 	}),
+})
+
+-- UI theme (the single source of UI typography + styling) ------------------------
+-- Before this, every HUD controller hardcoded its own fonts/strokes/corners -> a flat, dated,
+-- inconsistent look (30+ scattered Gotham references, zero gradients). These are the shared
+-- design tokens the controllers compose, so the whole HUD reads as ONE designed system. Fonts
+-- resolve through uiFont() so a modern face is used where available and degrades cleanly.
+Config.UI = table.freeze({
+	-- Typography. Builder Sans is Roblox's modern UI face; Creepster is the horror display cut
+	-- (used only for short impact words -- CAUGHT!, the intro title -- never body text).
+	DisplayFont = uiFont("Creepster", Enum.Font.GothamBlack), -- horror display: scares + the intro title
+	HeadingFont = uiFont("BuilderSansExtraBold", Enum.Font.GothamBlack), -- panel titles / big numbers
+	SubheadingFont = uiFont("BuilderSansBold", Enum.Font.GothamBold), -- labels / buttons
+	BodyFont = uiFont("BuilderSansMedium", Enum.Font.GothamMedium), -- body / secondary text
+
+	-- Palette (cool, desaturated, horror). Controllers read these instead of hardcoding RGB so
+	-- the HUD can be re-themed in one place.
+	TextColor = Color3.fromRGB(232, 234, 240), -- primary text (near-white, faint cool cast)
+	MutedTextColor = Color3.fromRGB(150, 156, 168), -- secondary / captions
+	AccentColor = Color3.fromRGB(120, 220, 255), -- the cold "interactive / info" cyan (battery, links)
+	DangerColor = Color3.fromRGB(224, 64, 58), -- threat / locked / bleedout
+	SafeColor = Color3.fromRGB(120, 230, 140), -- safe / success / escaped
+	WarnColor = Color3.fromRGB(238, 196, 92), -- caution / stamina-low / coins / keys
+
+	-- Panels. A subtle vertical gradient + cool hairline stroke gives flat frames depth (no
+	-- assets -- gradient + stroke only, which render dependably on every device).
+	PanelColor = Color3.fromRGB(18, 20, 26), -- base panel fill (the gradient darkens from this)
+	PanelGradientDarken = 0.45, -- the gradient's bottom is this fraction darker than the top
+	PanelTransparency = 0.08, -- panels are nearly opaque (readable over the dark maze)
+	PanelCornerRadius = 10, -- px corner radius for panels
+	ChipCornerRadius = 6, -- px corner radius for small chips / bars / buttons
+
+	StrokeColor = Color3.fromRGB(70, 78, 92), -- the cool hairline around panels/chips
+	StrokeTransparency = 0.35,
+	StrokeThickness = 1.5,
+
+	-- Text stroke (standardized so text weight reads consistently across every controller).
+	TextStrokeColor = Color3.fromRGB(0, 0, 0),
+	TextStrokeTransparency = 0.4,
+})
+
+-- Ambient atmosphere FX (the mood the maze was missing) ---------------------------
+-- Fine dust drifting in the air, emitted in a volume that follows the camera so it always
+-- surrounds the player and -- crucially -- CATCHES THE FLASHLIGHT BEAM (LightInfluence on), the
+-- single biggest "this place is real" tell in a dark corridor. Render-only, client-side, zero
+-- gameplay effect (the FlickerController-class cosmetic CLAUDE.md permits).
+Config.AtmosphereFX = table.freeze({
+	Enabled = true,
+	DustTexture = "rbxasset://textures/particles/smoke_main.dds", -- a soft built-in puff (no upload)
+	DustColor = Color3.fromRGB(150, 156, 170), -- cool grey, matched to the Atmosphere haze
+	VolumeSize = 30, -- studs: the cube around the camera that dust spawns within
+	Rate = 16, -- particles/second
+	LifetimeMin = 5, -- seconds a mote lives (min)...
+	LifetimeMax = 9, -- ...and max
+	SizeMin = 0.18, -- studs (tiny motes)
+	SizeMax = 0.5,
+	TransparencyMin = 0.55, -- faint...
+	TransparencyMax = 0.85, -- ...to nearly invisible (only the flashlight really reveals them)
+	Speed = 0.6, -- studs/s of slow drift
+	DriftRise = 0.12, -- studs/s^2 faint upward acceleration (warm air rising)
+	SpinDeg = 35, -- deg/s lazy mote spin
+	LightInfluence = 1, -- fully lit by nearby lights -> motes glow only in the beam
+	LightEmission = 0.1, -- a hair of self-emission so they're not pure black in shadow
+})
+
+-- Monster presence FX (make the creatures feel PHYSICAL, not ghostly) -------------
+-- Client cosmetics on each rig: dust kicked up under the feet while it moves (scaled by its
+-- replicated ground speed) and a faint breath fog from its head -- so a creature glimpsed in the
+-- dark reads as a living, breathing, ground-disturbing thing. Render-only, off replicated
+-- position/state only (exploit-safe; the MonsterAnimController cosmetic class).
+Config.MonsterFX = table.freeze({
+	Enabled = true,
+	-- Footfall dust under a moving rig.
+	DustTexture = "rbxasset://textures/particles/smoke_main.dds",
+	DustColor = Color3.fromRGB(120, 120, 128),
+	DustMoveSpeed = 4, -- studs/s of rig motion above which dust starts to kick up
+	DustFullSpeed = 16, -- studs/s the dust rate maxes at
+	DustMaxRate = 11, -- particles/s at/above full speed
+	DustSize = 1.2, -- studs
+	DustLifetime = 0.9, -- seconds
+	DustRise = 1.6, -- studs/s the dust puffs upward as it fades
+	-- Breath fog drifting from the head (always faintly on -- the thing is alive).
+	BreathTexture = "rbxasset://textures/particles/smoke_main.dds",
+	BreathColor = Color3.fromRGB(182, 186, 198),
+	BreathRate = 3, -- puffs/second
+	BreathSize = 0.85, -- studs
+	BreathLifetime = 1.5, -- seconds
+	BreathSpeed = 1.3, -- studs/s forward drift
+	BreathTransparency = 0.72,
+})
+
+-- Camera shake (the threat you FEEL) ---------------------------------------------
+-- A subtle continuous tremble scaled by the nearest hunting monster's proximity (the same
+-- exploit-safe threat model as Config.Chase) plus sharp one-shot impulses on discrete scares (a
+-- trap firing near you, being caught). Bound AFTER the camera update so it layers on top of
+-- whatever camera mode is active. Render-only; reads replicated state + cue remotes only. Kept
+-- deliberately small -- enough to feel, never enough to nauseate or hurt navigation.
+Config.CameraShake = table.freeze({
+	Enabled = true,
+	ThreatStartDistance = 38, -- studs: a hunting monster begins adding tremble
+	ThreatMaxDistance = 8, -- studs: full continuous tremble
+	AlertScale = 0.4, -- tremble multiplier when a monster is only Alert (heard you)
+	FadeRate = 4, -- per-second lerp toward the target tremble level (smooth in AND out)
+	MaxOffset = 0.16, -- studs of positional sway at full threat
+	MaxTilt = 0.9, -- degrees of rotational sway at full threat
+	Frequency = 9, -- Hz the continuous tremble oscillates at
+
+	-- One-shot impulses (decay quickly). Magnitude scales the same offset/tilt units.
+	TrapImpulse = 0.9, -- a trap FIRING near the player (TrapTriggered "fire")
+	TrapImpulseRadius = 40, -- studs: the impulse falls off to 0 across this distance
+	CaughtImpulse = 2.2, -- being grabbed (MonsterCaught)
+	ImpulseDecay = 7, -- per-second exponential decay of an active impulse
+	ImpulseFrequency = 22, -- Hz the impulse rattles at (snappier than the ambient tremble)
 })
 
 return table.freeze(Config)

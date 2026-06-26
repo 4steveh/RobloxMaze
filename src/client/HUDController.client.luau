@@ -200,7 +200,7 @@ arrow.AnchorPoint = Vector2.new(0.5, 1)
 arrow.Position = UDim2.new(0.5, 0, 1, -HUD.ArrowBottomOffset)
 arrow.Size = UDim2.fromOffset(HUD.ArrowSize, HUD.ArrowSize)
 arrow.BackgroundTransparency = 1
-arrow.Font = Enum.Font.GothamBold
+arrow.Font = Config.UI.HeadingFont
 arrow.Text = "\u{25B2}" -- up-pointing triangle = "ahead"
 arrow.TextScaled = true
 arrow.TextColor3 = HUD.ArrowColor
@@ -222,7 +222,7 @@ winIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 winIcon.Position = UDim2.fromScale(0.5, 0.45)
 winIcon.Size = UDim2.fromOffset(HUD.WinIconSize, HUD.WinIconSize)
 winIcon.BackgroundTransparency = 1
-winIcon.Font = Enum.Font.GothamBold
+winIcon.Font = Config.UI.HeadingFont
 winIcon.Text = "\u{2713}" -- checkmark placeholder; swap for an "escaped" graphic
 winIcon.TextScaled = true
 winIcon.TextColor3 = HUD.WinIconColor
@@ -235,7 +235,7 @@ local winTextBasePos = UDim2.fromScale(0.5, 0.58)
 winText.Position = winTextBasePos
 winText.Size = UDim2.fromOffset(HUD.WinTextWidth, HUD.WinTextSize + HUD.WinTextPadding)
 winText.BackgroundTransparency = 1
-winText.Font = Enum.Font.GothamBold
+winText.Font = Config.UI.DisplayFont
 winText.TextSize = HUD.WinTextSize
 winText.Text = "ESCAPED"
 winText.TextColor3 = HUD.WinIconColor
@@ -294,13 +294,25 @@ toast.Name = "Toast"
 toast.AnchorPoint = Vector2.new(0.5, 0.5)
 toast.Position = UDim2.fromScale(0.5, HUD.ToastYScale)
 toast.Size = UDim2.fromOffset(HUD.ToastWidth, HUD.ToastHeight)
-toast.BackgroundTransparency = 1
-toast.Font = Enum.Font.GothamBold
+toast.BackgroundColor3 = Config.UI.PanelColor
+toast.BackgroundTransparency = 1 -- the panel fades IN with the toast (hidden at rest, not a persistent box)
+toast.Font = Config.UI.SubheadingFont
 toast.TextSize = HUD.ToastTextSize
 toast.TextColor3 = Config.Feedback.ToastColor
-toast.TextStrokeTransparency = 0.4
+toast.TextStrokeTransparency = 1
 toast.TextTransparency = 1
 toast.Text = ""
+
+local toastCorner = Instance.new("UICorner")
+toastCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
+toastCorner.Parent = toast
+
+local toastStroke = Instance.new("UIStroke")
+toastStroke.Color = Config.UI.StrokeColor
+toastStroke.Transparency = 1 -- fades in/out with the panel
+toastStroke.Thickness = Config.UI.StrokeThickness
+toastStroke.Parent = toast
+
 toast.Parent = gui
 
 local toastToken = 0
@@ -310,10 +322,17 @@ local function showToast(text, color, seconds)
 	toast.Text = text
 	toast.TextColor3 = color or Config.Feedback.ToastColor
 	toast.TextTransparency = 0
-	toast.TextStrokeTransparency = 0.4
+	toast.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+	toast.BackgroundTransparency = Config.UI.PanelTransparency
+	toastStroke.Transparency = Config.UI.StrokeTransparency
 	task.delay(seconds, function()
 		if mine == toastToken then
-			TweenService:Create(toast, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+			TweenService:Create(
+				toast,
+				TweenInfo.new(0.5),
+				{ TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 }
+			):Play()
+			TweenService:Create(toastStroke, TweenInfo.new(0.5), { Transparency = 1 }):Play()
 		end
 	end)
 end

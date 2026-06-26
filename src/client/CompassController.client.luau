@@ -53,11 +53,11 @@ local function addBeacon(keyPart)
 	label.Position = UDim2.fromScale(0.5, 0)
 	label.Size = UDim2.fromOffset(C.BeaconSize + 24, 14)
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
+	label.Font = Config.UI.SubheadingFont
 	label.Text = C.LabelText
 	label.TextScaled = true
 	label.TextColor3 = C.BeaconColor
-	label.TextStrokeTransparency = 0.4
+	label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 	label.Parent = bb
 
 	bb.Parent = keyPart
@@ -109,11 +109,11 @@ local function addExitBeacon(part)
 	label.Position = UDim2.fromScale(0.5, 0)
 	label.Size = UDim2.fromOffset(C.BeaconSize + 40, 16)
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBlack
+	label.Font = Config.UI.SubheadingFont
 	label.Text = "EXIT"
 	label.TextScaled = true
 	label.TextColor3 = Config.Exit.UnlockedColor
-	label.TextStrokeTransparency = 0.3
+	label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 	label.Parent = bb
 
 	bb.Parent = part
@@ -141,11 +141,11 @@ arrow.AnchorPoint = Vector2.new(0.5, 1)
 arrow.Position = UDim2.new(0.5, 0, 1, -C.ArrowBottomOffset)
 arrow.Size = UDim2.fromOffset(C.ArrowSize, C.ArrowSize)
 arrow.BackgroundTransparency = 1
-arrow.Font = Enum.Font.GothamBold
+arrow.Font = Config.UI.SubheadingFont
 arrow.Text = "\u{25B2}"
 arrow.TextScaled = true
 arrow.TextColor3 = C.ArrowColor
-arrow.TextStrokeTransparency = 0.5
+arrow.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 arrow.Visible = false
 arrow.Parent = gui
 

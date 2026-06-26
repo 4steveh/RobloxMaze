@@ -69,6 +69,27 @@ local function makeKey(position)
 	light.Range = Config.KeyModel.LightRange
 	light.Parent = key
 
+	-- A few slow motes rising off the key so it glints like treasure down a dark corridor.
+	local sparkle = Instance.new("ParticleEmitter")
+	sparkle.Texture = Config.KeyModel.SparkleTexture
+	sparkle.Color = ColorSequence.new(Config.KeyModel.SparkleColor)
+	sparkle.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.4, Config.KeyModel.SparkleSize),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	sparkle.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	sparkle.Lifetime = NumberRange.new(Config.KeyModel.SparkleLifetime * 0.7, Config.KeyModel.SparkleLifetime)
+	sparkle.Rate = Config.KeyModel.SparkleRate
+	sparkle.Speed = NumberRange.new(Config.KeyModel.SparkleSpeed * 0.5, Config.KeyModel.SparkleSpeed)
+	sparkle.SpreadAngle = Vector2.new(40, 40)
+	sparkle.Acceleration = Vector3.new(0, 0.5, 0)
+	sparkle.LightEmission = 0.6 -- the motes glow (they're magic keys, not dust)
+	sparkle.Parent = key
+
 	key.Parent = keysFolder
 	-- Tag it so the client compass can beacon live keys (tag-based discovery, not a
 	-- hardcoded path). Removed implicitly on Destroy when collected.
