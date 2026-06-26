@@ -299,8 +299,16 @@ local function monkeyNestPositions(): { Vector3 }
 	return nests
 end
 
+-- The bunny's patrol graph (PatrolPoints minus the monkey's nest exclusion) never changes after
+-- boot -- the markers are placed content and don't move -- so compute it once and reuse, mirroring
+-- the cachedMonkeyNests cache two functions up (it was being rebuilt every tick: a CollectionService
+-- scan + an O(nodes*nests) filter ~10x/second, all to produce a constant).
+local cachedPatrolNodes: { Vector3 }? = nil
 local warnedNoPatrol = false
 local function patrolNodePositions(): { Vector3 }
+	if cachedPatrolNodes then
+		return cachedPatrolNodes
+	end
 	local nests = monkeyNestPositions()
 	local exclSq = SHARED.NestExclusionRadius * SHARED.NestExclusionRadius
 	local nodes = {}
@@ -320,12 +328,16 @@ local function patrolNodePositions(): { Vector3 }
 			end
 		end
 	end
-	if #nodes == 0 and not warnedNoPatrol then
-		warnedNoPatrol = true
-		warn(
-			"[MonsterService] No usable PatrolPoint markers (after monkey-nest exclusion); the bunny will idle near its spawn."
-		)
+	if #nodes == 0 then
+		if not warnedNoPatrol then
+			warnedNoPatrol = true
+			warn(
+				"[MonsterService] No usable PatrolPoint markers (after monkey-nest exclusion); the bunny will idle near its spawn."
+			)
+		end
+		return nodes -- don't cache an empty result: tags may still be settling at boot, so retry
 	end
+	cachedPatrolNodes = nodes
 	return nodes
 end
 

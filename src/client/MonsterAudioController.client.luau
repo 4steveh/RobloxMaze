@@ -72,6 +72,12 @@ alertSting.PlaybackSpeed = MA.AlertStingPitch
 alertSting.SoundGroup = monsterBus
 alertSting.Parent = SoundService
 
+-- Per-target threat (the fix for co-op false dread): the rig State attribute is GLOBAL -- a rig
+-- chasing a TEAMMATE reads as Chase to everyone -- so the continuous beds must NOT key off it
+-- alone. The MonsterStateChanged remote, by contrast, fires only to the player a rig targets, so
+-- it tells us whether a monster is hunting ME. We track that here and gate the heartbeat/tension
+-- ramp on it, so the score means "it is hunting YOU", not "a monster exists somewhere".
+local personalThreat = "none" -- "hunt" (Chase/Investigate on me), "alert" (Alert on me), or "none"
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
 stateRemote.OnClientEvent:Connect(function(state)
 	if state == Enums.MonsterState.Chase then
@@ -79,6 +85,22 @@ stateRemote.OnClientEvent:Connect(function(state)
 	elseif state == Enums.MonsterState.Alert then
 		alertSting:Play()
 	end
+	if state == Enums.MonsterState.Chase or state == Enums.MonsterState.Investigate then
+		personalThreat = "hunt"
+	elseif state == Enums.MonsterState.Alert then
+		personalThreat = "alert"
+	else
+		personalThreat = "none" -- Search/Patrol: it stopped hunting me
+	end
+end)
+
+-- Safe-room suppression: inside the sanctuary the beds go silent even if a monster lingers just
+-- outside the wall (server-authoritative occupancy via the InSafeRoom attribute; the client never
+-- self-detects). Without this a monster hovering by the safe-room wall kept the heart pounding,
+-- undercutting the PaddedCell reverb + relief bell the sanctuary plays.
+local inSafeRoom = player:GetAttribute(Attributes.InSafeRoom) == true
+player:GetAttributeChangedSignal(Attributes.InSafeRoom):Connect(function()
+	inSafeRoom = player:GetAttribute(Attributes.InSafeRoom) == true
 end)
 
 -- Per-rig 3D sounds (breathing loop + footstep one-shots) on the rig's HRP.
@@ -209,12 +231,17 @@ local function threatLevel(phrp): number
 			local d = (a.hrp.Position - phrp.Position).Magnitude
 			local st = rig:GetAttribute(Attributes.MonsterState)
 			local scale = 0
-			if st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate then
+			-- State-driven ramp ONLY when a monster is hunting ME (per-target flag above); a rig
+			-- chasing a teammate must not ramp my bed. The panic branch stays target-agnostic: ANY
+			-- monster right on top of you spikes the pulse regardless of who it's hunting.
+			if
+				personalThreat == "hunt" and (st == Enums.MonsterState.Chase or st == Enums.MonsterState.Investigate)
+			then
 				scale = 1
-			elseif st == Enums.MonsterState.Alert then
+			elseif personalThreat == "alert" and st == Enums.MonsterState.Alert then
 				scale = Config.Chase.AlertScale
 			elseif d <= MA.HeartbeatPanicRadius then
-				scale = 0.6 -- a patrolling monster RIGHT next to you still spikes the pulse
+				scale = 0.6 -- a monster RIGHT next to you still spikes the pulse (whoever it hunts)
 			end
 			if scale > 0 and d <= MA.HeartbeatStartDistance then
 				local span = math.max(MA.HeartbeatStartDistance - MA.HeartbeatMaxDistance, 1e-3)
@@ -260,8 +287,9 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- Global: gated heartbeat + adaptive tension bed, both driven by the nearest hunter.
-	local bestT = if phrp then threatLevel(phrp) else 0
+	-- Global: gated heartbeat + adaptive tension bed, both driven by the nearest hunter --
+	-- silenced entirely inside a safe room (the sanctuary should feel safe).
+	local bestT = if phrp and not inSafeRoom then threatLevel(phrp) else 0
 	heartbeat.Volume = MA.HeartbeatVolume * bestT
 	heartbeat.PlaybackSpeed = MA.HeartbeatMinRate + (MA.HeartbeatMaxRate - MA.HeartbeatMinRate) * bestT
 	local target = MUS.TensionMaxVolume * bestT
