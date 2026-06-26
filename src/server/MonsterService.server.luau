@@ -151,6 +151,12 @@ local function sensePlayers(rig: Model, cfg, rangeMul: number, params: RaycastPa
 		if player:GetAttribute(Attributes.InSafeRoom) == true then
 			continue
 		end
+		-- HIDDEN inside a HidingSpot (HidingService, server-authoritative): tucked away, the player
+		-- leaves the sensed set entirely -- the monster can neither see nor hear them, exactly like a
+		-- SafeRoom -- until a hunter lingering at the spot FLUSHES them out (HidingService clears Hidden).
+		if player:GetAttribute(Attributes.Hidden) == true then
+			continue
+		end
 		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
 			continue
 		end
@@ -516,6 +522,7 @@ while true do
 					and ply:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 					and ply:GetAttribute(Attributes.RespawnGrace) ~= true
 					and ply:GetAttribute(Attributes.Downed) ~= true
+					and ply:GetAttribute(Attributes.Hidden) ~= true
 				then
 					local phrp = PlayerUtil.livingRootPart(ply)
 					if phrp and (phrp.Position - root.Position).Magnitude <= inst.cfg.CatchRadius then

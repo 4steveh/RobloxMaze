@@ -31,6 +31,7 @@ Remotes.init()
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
 local exitLockedRemote = Remotes.get(Remotes.Names.ExitLocked)
 local exitOpenedRemote = Remotes.get(Remotes.Names.ExitOpened)
+local alarmRemote = Remotes.get(Remotes.Names.AlarmStateChanged) -- endgame climax: the all-keys alarm
 
 local EXIT = Config.Exit
 
@@ -97,6 +98,11 @@ local function refreshIndicators()
 			gate.light.Color = if unlocked then EXIT.UnlockedColor else EXIT.LockedColor
 		end
 	end
+	-- Same crossing drives the lobby-wide ALARM (the climax made felt): on at all-keys, off if
+	-- the team drops back below (a key respawn). One fire per transition (this only runs on change).
+	if Config.Endgame.AlarmEnabled then
+		alarmRemote:FireAllClients(unlocked)
+	end
 end
 
 local function openGates()
@@ -162,6 +168,9 @@ end)
 ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	announcedOpen = false
 	closeGates()
+	if Config.Endgame.AlarmEnabled then
+		alarmRemote:FireAllClients(false) -- silence the endgame alarm for the fresh round
+	end
 	for _, player in Players:GetPlayers() do
 		atLockedDoor[player] = nil
 		player:SetAttribute(Attributes.GameState, Enums.GameState.Playing)

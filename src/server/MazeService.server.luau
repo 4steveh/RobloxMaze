@@ -163,6 +163,63 @@ end
 buildPerimeterRow(M.OriginZ + M.CellSize * M.Rows, M.ExitCol, "MGN_") -- grid-north (the gate line)
 buildPerimeterRow(M.OriginZ, M.EntranceCol, "MGS_") -- grid-south (the daycare-entrance line)
 
+-- 4) Hang code-built practical LIGHTS through the maze (it built ZERO before -- corridors leaned on
+-- flat ambient, so there was no light/dark rhythm and the flashlight / dust motes / bloom had nothing
+-- to read against). Built ONCE here with the permanent superstructure, NOT per carve: cells never
+-- move, and each fixture sits at a CELL CENTRE -- always-open floor (the spanning tree reaches every
+-- centre; walls sit at cell EDGES) -- so a bulb can never end up buried inside a wall. Sparse spacing
+-- keeps the live light count low (Roblox culls offscreen ones). A PURE ADDITION (no ambient drop), so
+-- it can't re-trigger the hard-won "too dark" regression -- it only adds pools of light + contrast.
+local function buildLights()
+	local L = M.Lighting
+	if not L.Enabled then
+		return
+	end
+	-- Idempotent find-or-create, so a re-run (e.g. live re-sync) doesn't stack a second folder.
+	local folder = maze:FindFirstChild("Lights")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Lights"
+		folder.Parent = maze
+	end
+	-- Bresenham-style accumulator -> a FlickerFraction share of the fixtures, spread EVENLY and
+	-- DETERMINISTICALLY (no RNG): tag on each integer crossing (= every other fixture at the 0.5 default).
+	local flickerAccum = 0
+	for r = 0, M.Rows - 1 do
+		for c = 0, M.Cols - 1 do
+			if (c + r) % L.CellStride == 0 then -- a spread subset of centres (a diagonal grid, not clusters)
+				local bulb = Instance.new("Part")
+				bulb.Name = `ML_{c}_{r}`
+				bulb.Anchored = true
+				bulb.CanCollide = false
+				bulb.CanQuery = false
+				bulb.CanTouch = false
+				bulb.Size = Vector3.new(L.FixtureSize, L.FixtureSize, L.FixtureSize)
+				bulb.Material = Enum.Material.Neon
+				bulb.Color = L.FixtureColor -- the dark fixture housing; the PointLight throws the warm pool
+				bulb.Position = cellCenter(c, r) + Vector3.new(0, L.HangHeight, 0)
+				bulb.Parent = folder
+
+				local light = Instance.new("PointLight")
+				light.Color = L.Color
+				light.Brightness = L.Brightness
+				light.Range = L.Range
+				light.Shadows = L.Shadows -- a wash, not a caster (perf + reliable on mobile)
+				light.Parent = bulb
+
+				-- The FlickerController animates the LIGHT instances tagged FlickerLight, so the tag goes
+				-- on the PointLight (not the bulb part); the untagged remainder burn steady.
+				flickerAccum += L.FlickerFraction
+				if flickerAccum >= 1 then
+					flickerAccum -= 1
+					CollectionService:AddTag(light, Tags.FlickerLight)
+				end
+			end
+		end
+	end
+end
+buildLights()
+
 -- Boot validation: the cell-centre reachability guarantee only holds if the in-grid markers (keys/
 -- traps/monkey-nest/patrol nodes) actually SIT at cell centres -- a marker drifted onto an edge can
 -- be walled off by a raising wall on some random rounds (a silent, round-dependent break). We can't

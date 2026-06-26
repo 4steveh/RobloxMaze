@@ -18,6 +18,10 @@ local Tags = {
 	-- Hazards.
 	Trap = "Trap", -- a telegraphed floor trap (red arrow); TrapService arms/fires it spatially
 
+	-- Hiding spots (the genre's last-resort escape: a locker/cabinet you duck into). HidingService
+	-- confirms occupancy spatially + hides you from the monster's senses; placed in Studio like SafeRoom.
+	HidingSpot = "HidingSpot",
+
 	-- Monster markers.
 	MonsterSpawn = "MonsterSpawn", -- where the bunny enters the maze
 	MonkeySpawn = "MonkeySpawn", -- where the monkey nests/enters (placed in a different region)

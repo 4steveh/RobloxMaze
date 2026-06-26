@@ -79,6 +79,13 @@ Config.Keys = table.freeze({
 	-- farther, more dangerous spots), NOT required to win + NOT beaconed by the compass -- a pure
 	-- risk/reward detour worth round-end coins. 0 disables them. They never reduce required-key spots.
 	BonusSpawnPerRound = 2,
+
+	-- STAKES (off by default -- a balance change to validate in a real playtest, like Config.Downed):
+	-- when a player is KILLED by a monster (the normal catch path, NOT the co-op downed revive), the
+	-- team's most-recently-gained key drops back into the maze -- so a catch costs real objective
+	-- progress and the hunt finally has a consequence (fear needs stakes). It never drops below 0, and
+	-- the re-spawned key goes to a far unused KeySpot. KeyService reacts to ServerSignals.PlayerKilled.
+	DropOnCatch = false, -- true = a kill decrements the team key count + re-spawns one required key
 })
 
 -- Key model (the collectible's placeholder visuals) -----------------------------
@@ -246,6 +253,27 @@ Config.Maze = table.freeze({
 	-- Verification + settle (the navmesh-safety gate).
 	NavmeshSettleSeconds = 1.5, -- wait after a carve before the path smoke test (tiles re-rasterize)
 	MaxCarveRetries = 6, -- re-seed this many times if the ComputeAsync smoke test fails, then fall back
+
+	-- Code-built practical lights (the maze had ZERO -- it leaned on flat ambient, so corridors had no
+	-- light/dark rhythm and the flashlight, dust motes, and bloom had nothing to read against). MazeService
+	-- hangs sparse fixtures at a deterministic subset of CELL CENTRES (always-open floor -- a fixture can
+	-- never sit inside a wall, and cells don't move, so they're built ONCE with the wall superstructure)
+	-- and tags them FlickerLight, so the existing client FlickerController makes a share of them flicker
+	-- like failing fluorescents for FREE. This is a PURE ADDITION (no ambient drop), so it can't re-trigger
+	-- the hard-won "too dark" regression -- it only adds pools of light + contrast. Sparse spacing also
+	-- keeps the per-frame light count down (Roblox culls offscreen lights; only a few render per corridor).
+	Lighting = table.freeze({
+		Enabled = true,
+		CellStride = 3, -- a fixture roughly every Nth cell (placed where (c + r) % stride == 0 -> a spread grid, not clusters)
+		HangHeight = 11, -- studs above the floor the fixture hangs (just under the 14-tall ceiling line)
+		Color = Color3.fromRGB(255, 244, 214), -- a warm dim bulb (vs the cold ambient -> a hearth-ish pool)
+		Brightness = 1.4, -- modest: a pool, not daylight (and the flicker dips it further)
+		Range = 18, -- studs the pool reaches (overlaps a bit cell-to-cell so corridors aren't pitch black between)
+		Shadows = false, -- a wash, not a caster (perf + reliable on mobile, like the SafeRoom/key lights)
+		FixtureSize = 0.7, -- studs: a small emissive bulb part the light hangs on
+		FixtureColor = Color3.fromRGB(36, 34, 30), -- the dark housing around the bulb
+		FlickerFraction = 0.5, -- this fraction of fixtures get the FlickerLight tag (the rest burn steady)
+	}),
 })
 
 -- Per-round maze THEMES (replayability via visual variety) -----------------------
@@ -930,7 +958,7 @@ Config.Onboarding = table.freeze({
 	IntroNoun = "KEYS",
 	IntroSub = "...then escape through the EXIT.",
 	IntroBannerSeconds = 5, -- how long the center intro banner holds before fading
-	ControlsHint = "WASD Move    F Flashlight    Shift Sprint    Q Decoy",
+	ControlsHint = "WASD Move   F Flashlight   Shift Sprint   Q Decoy   E Hide",
 	ControlsHintSeconds = 9, -- how long the controls hint shows (or until first move)
 	ObjectiveLabel = "KEYS", -- "KEYS 0/3"
 	ObjectiveExitText = "ALL KEYS — REACH THE EXIT", -- objective tracker once keys are done
@@ -1512,6 +1540,71 @@ Config.Settings = table.freeze({
 	FxIntensityLabel = "EFFECTS INTENSITY",
 	VolumeLabel = "MASTER VOLUME",
 	ReduceFlashingLabel = "REDUCE FLASHING",
+})
+
+-- Hiding spots (the genre's missing last-resort escape: Granny/Piggy lockers) ----------------------
+-- When you're cornered -- out of stamina, decoy on cooldown -- you can DUCK INTO a tagged HidingSpot.
+-- Server-authoritative: the client sends only HideIntent (no payload); HidingService confirms you're
+-- within EnterRadius of a HidingSpot from your OWN server-known position, teleports + anchors you into
+-- the spot, and sets the Hidden attribute -- then MonsterService skips you (sight + hearing + contact)
+-- and NoiseService zeroes your noise, exactly like a SafeRoom. It is NOT god-mode: a HUNTING monster
+-- (Chase/Investigate) that lingers within DiscoverRadius of your spot for DiscoverSeconds FLUSHES you
+-- out (so you must break line of sight BEFORE hiding). Inert until HidingSpot markers are placed.
+Config.Hiding = table.freeze({
+	Enabled = true,
+	HideKey = Enum.KeyCode.E, -- press near a HidingSpot to duck in / out
+	GamepadHideKey = Enum.KeyCode.ButtonB, -- gamepad: B to hide/unhide
+	IntentRateLimit = 0.25, -- min seconds between accepted HideIntent messages (anti-spam, hostile input)
+	EnterRadius = 7, -- studs: you must be within this of a HidingSpot to duck in
+	ExitNudge = 4, -- studs in front of the spot the server places you when you climb back out
+	DiscoverRadius = 9, -- studs: a HUNTING monster this close to your spot begins to find you
+	DiscoverSeconds = 2.5, -- seconds a hunter lingers within DiscoverRadius before it FLUSHES you out
+	FlushGraceSeconds = 0.6, -- a beat of RespawnGrace on a flush so being found isn't an instant grab
+
+	-- HUD (HideController, render-only): a prompt when near a usable spot + the hidden overlay.
+	PromptText = "HIDE", -- the "press E to HIDE" affordance shown near a spot
+	HiddenText = "HIDDEN — stay still", -- shown while you're tucked away
+	PromptColor = Color3.fromRGB(150, 200, 235),
+
+	-- On-screen touch HIDE button (mobile/iPad), bottom-right stack ABOVE the DECOY button (370).
+	TouchLabel = "HIDE",
+	TouchBottomOffset = 490, -- px from the bottom (above DECOY at 370, keeping the stack's 20px gap)
+	TouchColor = Color3.fromRGB(150, 200, 235),
+})
+
+-- Ambush micro-scares (the AmbushNode tag was DEFINED but DEAD -- nothing read it) ------------------
+-- Long randomized corridors had stretches of dead-quiet traversal between monster encounters.
+-- AmbushService polls players vs AmbushNode markers; passing within TriggerRadius (once, then a
+-- cooldown) fires AmbushTriggered -> AmbushFXController plays a localized 3D skitter + briefly cuts the
+-- nearest practical light: a cheap "something just moved" beat that decides NOTHING. Inert until placed.
+Config.Ambush = table.freeze({
+	Enabled = true,
+	TriggerRadius = 11, -- studs: passing within this of an AmbushNode springs its scare
+	Cooldown = 25, -- seconds before the same node can scare the same player again
+	SkitterId = "rbxassetid://81623756670923", -- a quick scuttle (reuses the verified footstep id, pitched)
+	SkitterPitch = 1.5, -- pitched up so it reads as a fast skitter, not a footstep
+	SkitterVolume = 0.65,
+	SkitterRange = 45, -- studs RollOffMaxDistance (3D, at the node)
+	LightCutSeconds = 0.45, -- briefly drop the nearest FlickerLight to sell the scare
+})
+
+-- Endgame ALARM (the climax made felt) ------------------------------------------------------------
+-- When the team grabs the LAST key the exit opens and it's a sprint for the door -- but the only
+-- escalation was the subtle aggression ramp. ExitService now fires AlarmStateChanged(true) on the
+-- all-keys transition (and (false) on a round reset / re-lock), and the client AlarmFXController throws
+-- a pulsing red emergency wash + an alarm sting (and a low looping bed) until the round ends. (Monster
+-- speed/range is already at max at full keys via Config.Aggression, so this is the AUDIOVISUAL half.)
+Config.Endgame = table.freeze({
+	AlarmEnabled = true,
+	WashColor = Color3.fromRGB(255, 40, 30), -- the red emergency tint
+	WashMaxTransparency = 0.8, -- the wash's most-opaque alpha at a pulse peak (a wash, not a blackout)
+	PulseHz = 1.3, -- the emergency pulse speed
+	FadeSeconds = 0.8, -- fade the wash in on alarm-on, out on alarm-off
+	StingId = "rbxassetid://1841353932", -- one-shot on the all-keys transition (reuses the verified chase sting)
+	StingVolume = 0.85,
+	BedId = "rbxassetid://140704980462451", -- a low looping alarm bed (reuses the verified dread drone)
+	BedVolume = 0.4,
+	BedPitch = 1.35, -- pitched up so the drone reads as an alarm, not the ambient bed
 })
 
 -- Shop open key (ShopController; was a hardcoded UserInputService 'B' -- moved here so a gamepad

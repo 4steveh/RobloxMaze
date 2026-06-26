@@ -29,6 +29,9 @@ local D = Config.Downed
 
 Remotes.init()
 local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
+-- A KILL (not the co-op down) emits this so KeyService can apply the drop-a-key stake,
+-- without coupling KeyService to monster/life logic (it just reacts to the signal).
+local killedSignal = ServerSignals.get(ServerSignals.Names.PlayerKilled)
 
 -- [player] = { progress = number, jumpPower = number, jumpHeight = number }
 local downedState = {}
@@ -70,6 +73,7 @@ local function kill(player, species)
 	if humanoid then
 		humanoid.Health = 0 -- SpawnService.Died → RespawnDelay → checkpoint respawn
 	end
+	killedSignal:Fire(player) -- a kill resolved → KeyService applies the drop-a-key stake (if Config.Keys.DropOnCatch)
 end
 
 -- Any OTHER living, non-downed player who could come save this one? (Existence, not range:
