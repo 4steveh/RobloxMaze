@@ -432,6 +432,20 @@ local keyCollectedRemote = Remotes.get(Remotes.Names.KeyCollected)
 local gameWonRemote = Remotes.get(Remotes.Names.GameWon)
 local exitLockedRemote = Remotes.get(Remotes.Names.ExitLocked)
 local exitOpenedRemote = Remotes.get(Remotes.Names.ExitOpened)
+local huntingAlertRemote = Remotes.get(Remotes.Names.HuntingAlert)
+
+-- Co-op situational awareness: a monster just started hunting a TEAMMATE. The hunted player
+-- already feels it (chase sting/grade), so only show the alert to OTHERS -- "Steve is being HUNTED!"
+huntingAlertRemote.OnClientEvent:Connect(function(huntedName)
+	if not huntedName or huntedName == player.Name then
+		return
+	end
+	showToast(
+		string.format("%s %s", huntedName, Config.Feedback.HuntedSuffix),
+		Config.Feedback.HuntedColor,
+		Config.Feedback.HuntedToastSeconds
+	)
+end)
 
 -- Pip count syncs from the server-authoritative KeyCount attribute, so it is correct on
 -- pickup AND on a round reset to 0 (the remote below only drives the chime/toast juice).

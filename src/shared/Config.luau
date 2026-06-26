@@ -1008,6 +1008,15 @@ Config.Feedback = table.freeze({
 	EscapedSuffix = "ESCAPED!", -- composed with the escapee's name: "Steve ESCAPED!"
 	EscapedColor = Color3.fromRGB(120, 230, 130),
 	EscapedToastSeconds = 3.0,
+
+	-- Co-op HUNT ALERT: when a monster starts actively hunting a TEAMMATE, everyone else gets a brief
+	-- toast ("Steve is being HUNTED!") so the team has situational awareness (help them or scatter) --
+	-- the hunted player already feels it via the chase sting/grade. Throttled per target so a monster
+	-- losing + re-acquiring the same player in quick succession can't spam the lobby.
+	HuntedSuffix = "is being HUNTED!", -- composed with the target's name
+	HuntedColor = Color3.fromRGB(235, 90, 70),
+	HuntedToastSeconds = 2.5,
+	HuntAlertCooldown = 6, -- min seconds between hunt alerts for the SAME player (server-side throttle)
 })
 
 -- Chase FX: the hunt as a visual event ------------------------------------------
