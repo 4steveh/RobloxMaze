@@ -7,7 +7,6 @@
 -- + impact flash). Render-only; the trap arming/firing/kill is all server-authoritative.
 
 local RunService = game:GetService("RunService")
-local SoundService = game:GetService("SoundService")
 local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -58,18 +57,25 @@ local function setTrapColor(part, color, glowMul)
 	end
 end
 
-local function play(id, volume)
+-- Spatial: parent the Sound to the trap PART so a trap sprung across the maze (by a teammate
+-- or a monster baited over it) attenuates with distance instead of thunking at full volume in
+-- every player's ears (a false proximity cue). The local player standing on the trap is at ~0
+-- distance = full volume, so the reaction-window click is unaffected.
+local function play(id, volume, part)
 	local s = Instance.new("Sound")
 	s.SoundId = id
 	s.Volume = volume or 0.6
 	s.SoundGroup = sfxBus
-	s.Parent = SoundService
+	s.RollOffMode = Enum.RollOffMode.InverseTapered
+	s.RollOffMinDistance = Config.Audio.RollOffMin
+	s.RollOffMaxDistance = C.SfxRange
+	s.Parent = part
 	s:Play()
 	Debris:AddItem(s, 3)
 end
 
 local function windup(part)
-	play(C.ClickId, 0.5)
+	play(C.ClickId, 0.5, part)
 	flashing[part] = true
 	task.spawn(function()
 		local t0 = os.clock()
@@ -86,7 +92,7 @@ local function windup(part)
 end
 
 local function fire(part)
-	play(C.FireId, C.FireVolume)
+	play(C.FireId, C.FireVolume, part)
 	flashing[part] = true
 	setTrapColor(part, C.ArrowFlashColor, 5)
 	task.delay(0.15, function()

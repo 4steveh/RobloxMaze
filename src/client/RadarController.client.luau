@@ -28,11 +28,12 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = false -- sit below the Roblox topbar
 gui.Parent = playerGui
 
--- The radar dish (top-right).
+-- The radar dish (top-right, pushed down by TopOffset so it clears the now-populated Roblox
+-- player list -- which also lives top-right since PlayerData mirrors Coins + Escapes to leaderstats).
 local dish = Instance.new("Frame")
 dish.Name = "Dish"
 dish.AnchorPoint = Vector2.new(1, 0)
-dish.Position = UDim2.new(1, -R.Margin, 0, R.Margin)
+dish.Position = UDim2.new(1, -R.Margin, 0, R.Margin + R.TopOffset)
 dish.Size = UDim2.fromOffset(R.Size, R.Size)
 dish.BackgroundColor3 = R.BackgroundColor
 dish.BackgroundTransparency = R.BackgroundTransparency
@@ -80,7 +81,7 @@ sweepArm.Parent = dish
 local label = Instance.new("TextLabel")
 label.Name = "Label"
 label.AnchorPoint = Vector2.new(1, 1)
-label.Position = UDim2.new(1, -R.Margin, 0, R.Margin)
+label.Position = UDim2.new(1, -R.Margin, 0, R.Margin + R.TopOffset) -- ride down with the dish
 label.Size = UDim2.fromOffset(R.Size, 14)
 label.BackgroundTransparency = 1
 label.Font = Config.UI.SubheadingFont
@@ -105,6 +106,18 @@ local function speciesColor(rig)
 	return R.UnknownBlipColor
 end
 
+-- The species' INITIAL, drawn over the blip as a COLORBLIND-redundant cue: the red bunny and
+-- yellow monkey are exactly the deuteranopia/protanopia-confusable pair, so a glyph ("B"/"M")
+-- tells them apart without relying on hue. Taken from the species name itself so it can't drift
+-- from Enums; "?" for an unrecognised rig (mirrors speciesColor's UnknownBlipColor fallback).
+local function speciesLetter(rig)
+	local sp = rig:GetAttribute(Attributes.MonsterSpecies)
+	if sp == Enums.MonsterType.Bunny or sp == Enums.MonsterType.Monkey then
+		return string.sub(sp, 1, 1)
+	end
+	return "?"
+end
+
 local function makeBlip()
 	local b = Instance.new("Frame")
 	b.Name = "Blip"
@@ -116,6 +129,23 @@ local function makeBlip()
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0.5, 0)
 	c.Parent = b
+	-- Colorblind redundancy: a bold species INITIAL centred on the blip so the red/yellow pair
+	-- reads apart by GLYPH, not just hue. TextScaled keeps the single letter legible as the blip
+	-- resizes (hunting vs idle); a near-black glyph with a white stroke stays readable on both
+	-- the bright-red and bright-yellow fills.
+	local letter = Instance.new("TextLabel")
+	letter.Name = "Species"
+	letter.AnchorPoint = Vector2.new(0.5, 0.5)
+	letter.Position = UDim2.fromScale(0.5, 0.5)
+	letter.Size = UDim2.fromScale(1, 1)
+	letter.BackgroundTransparency = 1
+	letter.Font = Config.UI.HeadingFont -- the boldest UI face -> legible at blip size
+	letter.TextScaled = true
+	letter.TextColor3 = Color3.new(0, 0, 0)
+	letter.TextStrokeColor3 = Color3.new(1, 1, 1)
+	letter.TextStrokeTransparency = 0
+	letter.ZIndex = 4 -- above the blip fill (which is 3)
+	letter.Parent = b
 	b.Parent = dish
 	return b
 end
@@ -201,7 +231,8 @@ RunService.RenderStepped:Connect(function(dt)
 			seen[rig] = true
 			local st = blips[rig]
 			if not st then
-				st = { frame = makeBlip(), pingPos = nil, pingClock = 0 }
+				local frame = makeBlip()
+				st = { frame = frame, letter = frame:FindFirstChild("Species"), pingPos = nil, pingClock = 0 }
 				blips[rig] = st
 			end
 
@@ -242,6 +273,7 @@ RunService.RenderStepped:Connect(function(dt)
 					end
 					frame.Position = UDim2.new(0.5, px * frac * maxOffset, 0.5, -py * frac * maxOffset)
 					frame.BackgroundColor3 = speciesColor(rig)
+					st.letter.Text = speciesLetter(rig) -- re-read each ping so it shows once Species replicates
 					frame.BackgroundTransparency = R.MinPingTransparency + (1 - alpha) * (1 - R.MinPingTransparency)
 					local sz = if hunting then R.BlipSize else R.BlipSize * R.IdleSizeScale
 					frame.Size = UDim2.fromOffset(sz, sz)

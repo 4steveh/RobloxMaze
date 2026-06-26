@@ -24,6 +24,7 @@ local CollectionService = game:GetService("CollectionService")
 local Config = require(ReplicatedStorage.Config)
 local Maze = require(ReplicatedStorage.Maze)
 local Tags = require(ReplicatedStorage.Tags)
+local Remotes = require(ReplicatedStorage.Remotes)
 local ServerSignals = require(script.Parent.ServerSignals)
 
 local M = Config.Maze
@@ -31,6 +32,8 @@ local THEMES = Config.MazeThemes -- per-round visual themes (wall palette + atmo
 local SHARED = Config.Monster.Shared -- pathfinding agent dims (single source of truth)
 local mazeRebuilt = ServerSignals.get(ServerSignals.Names.MazeRebuilt)
 local mazeThemeSelected = ServerSignals.get(ServerSignals.Names.MazeThemeSelected)
+Remotes.init()
+local themeAnnounced = Remotes.get(Remotes.Names.RoundThemeAnnounced) -- tells clients the theme NAME
 
 if not M.Enabled then
 	return -- static layout: leave the placed maze untouched
@@ -332,7 +335,8 @@ local function carve()
 		if THEMES and #THEMES > 0 then
 			local idx = Random.new():NextInteger(1, #THEMES)
 			recolorWalls(THEMES[idx])
-			mazeThemeSelected:Fire(idx)
+			mazeThemeSelected:Fire(idx) -- server-side: EnvironmentService remixes the atmosphere/grade
+			themeAnnounced:FireAllClients(idx) -- client-side: ObjectiveController surfaces the theme NAME
 		end
 		mazeRebuilt:Fire() -- announce ready (MonsterService gates its hunt on this)
 	until not pendingCarve

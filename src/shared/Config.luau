@@ -36,6 +36,7 @@ Config.Flashlight = table.freeze({
 	Brightness = 4, -- SpotLight.Brightness (a strong near-field that beats the fog + reads on dim iPad screens)
 
 	ToggleKey = Enum.KeyCode.F, -- key that toggles the flashlight on/off
+	GamepadToggleKey = Enum.KeyCode.ButtonY, -- gamepad button that toggles the flashlight (bound alongside ToggleKey)
 	LowBatteryFlickerSpeed = 14, -- flicker oscillation speed (rad/s) below the low-battery threshold
 	LowBatteryMinBrightnessScale = 0.35, -- brightness floor (fraction of Brightness) while flickering
 	Shadows = false, -- OFF for a reliable lit cone: SpotLight shadows only exist under Future, and
@@ -705,6 +706,7 @@ Config.Noise = table.freeze({
 -- be aimed through geometry or spoofed. A cooldown stops spam. Only the deaf bunny ignores it.
 Config.Decoy = table.freeze({
 	ThrowKey = Enum.KeyCode.Q, -- toss a decoy
+	GamepadThrowKey = Enum.KeyCode.ButtonX, -- gamepad button that throws a decoy (bound alongside ThrowKey)
 	ThrowDistance = 42, -- studs ahead the decoy lands (clamped to the first wall along the throw)
 	Cooldown = 8, -- seconds between throws (server-authoritative)
 	IntentRateLimit = 0.25, -- min seconds between accepted ThrowDecoy messages (anti-spam, hostile input)
@@ -784,6 +786,10 @@ Config.Traps = table.freeze({
 	ClickId = "rbxassetid://9119717523", -- mechanical click on wind-up
 	FireId = "rbxassetid://9120188626", -- a hard thunk on fire
 	FireVolume = 0.8,
+	-- The trap click/fire are now SPATIAL (parented to the trap part with roll-off), so a trap
+	-- sprung across the maze attenuates instead of thunking at full volume in every ear. The local
+	-- player standing on the trap is at ~0 distance = full volume, so the reaction click is unaffected.
+	SfxRange = 60, -- studs RollOffMaxDistance for the 3D trap click/fire
 })
 
 -- Safe-room marking (server-built, replicated) ------------------------------------
@@ -890,6 +896,7 @@ Config.Player = table.freeze({
 	StaminaRegen = 0.7, -- stamina seconds restored per real second while not sprinting
 	StaminaRegenDelay = 0.6, -- seconds after sprinting before stamina starts to regen
 	SprintKey = Enum.KeyCode.LeftShift,
+	GamepadSprintKey = Enum.KeyCode.ButtonL3, -- gamepad: click the left stick to sprint (bound alongside SprintKey)
 	IntentRateLimit = 0.08, -- min seconds between accepted SprintIntent messages (anti-spam)
 
 	-- Sprint FOV kick (CLIENT cosmetic only -- SprintFXController). The camera FOV widens
@@ -992,6 +999,10 @@ Config.TouchControls = table.freeze({
 Config.Radar = table.freeze({
 	Size = 156, -- px diameter of the radar disc
 	Margin = 20, -- px from the top-right corner
+	-- Pushed DOWN this far so the dish clears the default Roblox player list (which sits top-right
+	-- and is now populated -- PlayerData mirrors Coins + Escapes to leaderstats). Sized for a small
+	-- co-op lobby's leaderstat rows; raise it if a longer player list still overlaps the dish.
+	TopOffset = 96, -- px added below Margin so the radar doesn't collide with the player list
 	Range = 130, -- studs: a monster at/beyond this sits on the radar's edge (and out of sweep range)
 	BackgroundColor = Color3.fromRGB(10, 12, 16),
 	BackgroundTransparency = 0.35,
@@ -1321,6 +1332,27 @@ Config.Audio = table.freeze({
 		HuntBeginsVolume = 0.7,
 		JumpscareId = "rbxassetid://139306955269282", -- MonsterCaught (full-volume, ducks others)
 		JumpscareVolume = 1.0,
+
+		-- Co-op + progression payoffs that previously had NO audio. All reuse already-verified ids,
+		-- pitched/levelled so each reads distinctly by ear (the content the architecture already supported).
+		-- A TEAMMATE is being hunted (HuntingAlert): a quieter, lower warning so you never confuse it with
+		-- your OWN ChaseSting -- "someone's in trouble", not "it's on me".
+		HuntedAlertId = "rbxassetid://1841353932",
+		HuntedAlertVolume = 0.4,
+		HuntedAlertPitch = 0.78,
+		-- An achievement unlocked: a bright rising chime (reuses the key-complete flourish, pitched up).
+		AchievementId = "rbxassetid://7381723941",
+		AchievementVolume = 0.7,
+		AchievementPitch = 1.5,
+		-- The round-summary card appears: a soft results tone (reuses the key chime, low + warm).
+		RoundSummaryId = "rbxassetid://7381723941",
+		RoundSummaryVolume = 0.5,
+		RoundSummaryPitch = 0.9,
+		-- Throwing a decoy: an immediate local release/whoosh so the input is confirmed before the
+		-- thrown part's 3D rattle is audible (reuses the mechanical click, a touch up-pitched).
+		DecoyThrowId = "rbxassetid://9119717523",
+		DecoyThrowVolume = 0.55,
+		DecoyThrowPitch = 1.2,
 	}),
 })
 
@@ -1435,6 +1467,54 @@ Config.CameraShake = table.freeze({
 	CaughtImpulse = 2.2, -- being grabbed (MonsterCaught)
 	ImpulseDecay = 7, -- per-second exponential decay of an active impulse
 	ImpulseFrequency = 22, -- Hz the impulse rattles at (snappier than the ambient tremble)
+})
+
+-- Player comfort & accessibility (the FX-heavy horror game shipped with NO settings layer) ---------
+-- A render-only client menu (SettingsController) writing personal, uncontested prefs as LocalPlayer
+-- attributes (the FlickerController-class client exception CLAUDE.md permits -- they affect only the
+-- local view/audio, never any contested outcome). FX controllers READ these attributes:
+--   * FxIntensity (0..1): multiplies the strength of the chase grade, camera shake, flashlight
+--     flicker, the noise-meter pulse, and the jumpscare flash. 1 = full (default), 0 = effects off.
+--   * ReduceFlashing (bool): floors the rapid brightness flicker + cuts screen strobes (photosensitivity).
+--   * MasterVolume (0..1): scales the AudioGroups Master bus (the single mix root) -- there was no way
+--     to lower the audio (incl. the scream) at all.
+-- The menu ALSO recalls the onboarding (controls + the red/yellow threat legend) so a player who
+-- missed the one-shot intro can re-read it. Opened by a gear button (always visible, touch-friendly),
+-- ToggleKey, or the gamepad button. Prefs are per-session (client-local attributes; no server trust).
+Config.Settings = table.freeze({
+	ToggleKey = Enum.KeyCode.P, -- keyboard key to open/close the settings + help menu
+	GamepadToggleKey = Enum.KeyCode.DPadUp, -- gamepad: D-pad up opens the menu
+	DefaultFxIntensity = 1.0, -- 0..1 starting FX strength
+	DefaultMasterVolume = 1.0, -- 0..1 starting master volume
+	DefaultReduceFlashing = false,
+
+	-- The gear button (top-left -- the one screen corner the HUD/radar/player-list don't use).
+	ButtonSize = 46, -- px
+	ButtonMargin = 16, -- px from the top-left corner
+	GearLabel = "⚙",
+	GearColor = Color3.fromRGB(206, 210, 222),
+
+	-- Panel.
+	PanelWidth = 440, -- px
+	PanelHeight = 500, -- px
+	Title = "SETTINGS",
+	HelpTitle = "HOW TO PLAY",
+	RowHeight = 46, -- px per setting row
+	AdjustStep = 0.1, -- master volume / FX intensity adjust in 1/10 increments
+	-- ReduceFlashing floors a flicker/flash amplitude to this fraction of base (a faint steady dim,
+	-- never a strobe). Read by the FX controllers when the ReduceFlashing pref is on.
+	ReduceFlashingFloor = 0.85,
+
+	FxIntensityLabel = "EFFECTS INTENSITY",
+	VolumeLabel = "MASTER VOLUME",
+	ReduceFlashingLabel = "REDUCE FLASHING",
+})
+
+-- Shop open key (ShopController; was a hardcoded UserInputService 'B' -- moved here so a gamepad
+-- button can also open it, and so the keybind lives in Config like every other control).
+Config.Shop = table.freeze({
+	OpenKey = Enum.KeyCode.B, -- keyboard key to open/close the cosmetics shop
+	GamepadOpenKey = Enum.KeyCode.DPadDown, -- gamepad: D-pad down opens the shop
 })
 
 return table.freeze(Config)

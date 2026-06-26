@@ -127,6 +127,28 @@ local legendLines = {
 	legendLine(O.LegendMonkeyText, O.LegendMonkeyColor, 3, 19, Config.UI.BodyFont),
 }
 
+-- Per-round THEME card (top-center, re-shown each round) ----------------------------
+-- The maze recolours to one of Config.MazeThemes every round, but the player never SAW which, so the
+-- variety read as random recolouring. Name the theme briefly on round start as a location-style title
+-- card, then fade it like the intro banner. Starts hidden; a RoundThemeAnnounced reveals it. Render-only
+-- flavor off the server's theme INDEX (decides nothing).
+local themes = Config.MazeThemes
+
+local themeCard = Instance.new("TextLabel")
+themeCard.Name = "ThemeCard"
+themeCard.AnchorPoint = Vector2.new(0.5, 0.5)
+themeCard.Position = UDim2.fromScale(0.5, 0.18)
+themeCard.Size = UDim2.fromOffset(620, 44)
+themeCard.BackgroundTransparency = 1
+themeCard.Font = Config.UI.DisplayFont
+themeCard.TextSize = 38
+themeCard.TextColor3 = Config.UI.TextColor
+themeCard.TextStrokeColor3 = Config.UI.TextStrokeColor
+themeCard.TextStrokeTransparency = 1
+themeCard.TextTransparency = 1
+themeCard.Text = ""
+themeCard.Parent = gui
+
 -- Controls hint (bottom-center, fades after a timer or first move) ------------------
 local controls = Instance.new("TextLabel")
 controls.Name = "ControlsHint"
@@ -166,6 +188,27 @@ task.delay(O.LegendSeconds, function()
 	for _, line in legendLines do
 		fadeOut(line, 1)
 	end
+end)
+
+-- Surface the per-round theme name on round start, hold it, then fade like the intro banner.
+local function showTheme(index)
+	-- The wire payload is the theme INDEX -- treat it as hostile: bail on a non-number or an empty theme
+	-- list (= the un-themed static look), and clamp into range before indexing Config.MazeThemes.
+	if typeof(index) ~= "number" or #themes == 0 then
+		return
+	end
+	local theme = themes[math.clamp(math.floor(index), 1, #themes)]
+	themeCard.Text = string.upper(theme.Name)
+	themeCard.TextTransparency = 0
+	themeCard.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+	task.delay(O.IntroBannerSeconds, function()
+		fadeOut(themeCard, 1)
+	end)
+end
+
+local roundThemeAnnounced = Remotes.get(Remotes.Names.RoundThemeAnnounced)
+roundThemeAnnounced.OnClientEvent:Connect(function(index)
+	showTheme(index)
 end)
 
 -- Fade the controls hint after its timer OR the first movement key, whichever first.

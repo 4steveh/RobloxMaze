@@ -22,6 +22,22 @@ local Attributes = require(ReplicatedStorage.Attributes)
 local player = Players.LocalPlayer
 local caughtRemote = Remotes.get(Remotes.Names.MonsterCaught)
 
+-- Personal comfort/accessibility prefs (LocalPlayer attributes from SettingsController; render-only,
+-- client-local), cached + refreshed on change. FxIntensity scales the red flash + the lunge shake;
+-- ReduceFlashing swaps the hard flash for a gentle steady dim (photosensitivity). The scream is left
+-- to the global master-volume setting, so audio is untouched here.
+local fxIntensity = Config.Settings.DefaultFxIntensity
+local reduceFlashing = Config.Settings.DefaultReduceFlashing
+local function refreshPrefs()
+	local fx = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = if typeof(fx) == "number" then fx else Config.Settings.DefaultFxIntensity
+	local rf = player:GetAttribute(Attributes.SettingReduceFlashing)
+	reduceFlashing = if typeof(rf) == "boolean" then rf else Config.Settings.DefaultReduceFlashing
+end
+refreshPrefs()
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshPrefs)
+player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshPrefs)
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "JumpscareGui"
 gui.IgnoreGuiInset = true
@@ -186,12 +202,16 @@ caughtRemote.OnClientEvent:Connect(function(downed, species)
 	local hasFace = populateViewport(species)
 	viewport.Visible = hasFace
 	flash.Visible = true
-	flash.BackgroundTransparency = 0.05
+	-- The red overlay: the FX-strength pref scales how strong it reads (0 == none). ReduceFlashing
+	-- holds a gentle STEADY red (no strobe) for the whole window; otherwise it's a hard punch.
+	flash.BackgroundTransparency = if reduceFlashing then 1 - 0.18 * fxIntensity else 1 - 0.95 * fxIntensity
 	caughtLabel.Visible = killed
 	countdownLabel.Visible = killed
 
-	-- Flash punch out fast (reveals the face).
-	TweenService:Create(flash, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+	-- Flash punch out fast (reveals the face) -- skipped under ReduceFlashing, where the gentle red holds.
+	if not reduceFlashing then
+		TweenService:Create(flash, TweenInfo.new(0.5, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+	end
 
 	-- Lunge + shake for the first ~0.55s, then hold the face for the rest of the window.
 	task.spawn(function()
@@ -203,7 +223,7 @@ caughtRemote.OnClientEvent:Connect(function(downed, species)
 			elapsed += dt
 			local t = math.clamp(elapsed / lunge, 0, 1)
 			local dist = 3.4 - 1.8 * t -- dolly in
-			local shake = (1 - t) * 0.28
+			local shake = (1 - t) * 0.28 * fxIntensity
 			local jx = (math.random() - 0.5) * shake
 			local jy = (math.random() - 0.5) * shake
 			vpCamera.CFrame = CFrame.new(Vector3.new(jx, faceY + jy, -dist), Vector3.new(0, faceY, 0))

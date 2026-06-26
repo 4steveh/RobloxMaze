@@ -28,6 +28,7 @@ local Names = table.freeze({
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
 	AchievementUnlocked = "AchievementUnlocked", -- server -> client: a lifetime-stat milestone just earned (payload: {name, reward}) -- drives the unlock toast (StatsService)
 	ShopResult = "ShopResult", -- server -> client: result of a ShopAction (payload: {ok, op, id, reason?})
+	RoundThemeAnnounced = "RoundThemeAnnounced", -- server -> ALL clients: the new round picked a maze THEME (payload: theme index into Config.MazeThemes) -- MazeService fires it so the client can surface the theme NAME ("Entering: BOILER"); the server-side MazeThemeSelected signal stays server-only
 
 	-- CLIENT -> SERVER (inbound). Payload is HOSTILE: validate type and rate-limit on the
 	-- server (see SprintService). Carries the sprint key held-state.
@@ -53,6 +54,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.DataReady,
 	Names.AchievementUnlocked,
 	Names.ShopResult,
+	Names.RoundThemeAnnounced,
 	Names.SprintIntent,
 	Names.ShopAction,
 	Names.ThrowDecoy,
