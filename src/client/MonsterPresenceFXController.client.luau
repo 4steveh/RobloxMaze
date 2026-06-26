@@ -27,6 +27,11 @@ end
 local STATE = Attributes.MonsterState
 local rigs = {} -- [rig] = { root, dust, breath, lastPos, speed }
 
+-- A catch/round-reset teleports the rig home (PivotTo); that one-frame jump reads as a huge
+-- instantaneous speed. Real creature locomotion stays well under this, so any planar speed
+-- above it is a teleport frame to reject -- not motion that should kick up a dust burst at home.
+local MAX_PLAUSIBLE_SPEED = 80 -- studs/s
+
 -- The head that hosts the breath: the visible CHead if present, else the (invisible) Head, else
 -- the root -- the emitter just needs a point near the face. Forward is host-local -Z (matches
 -- the rig's eye placement convention in MonsterRig).
@@ -114,14 +119,22 @@ local function removeRig(rig)
 	rigs[rig] = nil
 end
 
-local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
-for _, rig in monstersFolder:GetChildren() do
-	addRig(rig)
+-- Bounded wait: if MonsterService errors before parenting the folder, don't yield forever
+-- (which would silently disable the dust/breath) -- warn and bail. Connect ChildAdded BEFORE
+-- the initial sweep so a rig parented mid-sweep can't be missed (addRig is idempotent).
+local monstersFolder = Workspace:FindFirstChild(WorldFolders.Monsters)
+	or Workspace:WaitForChild(WorldFolders.Monsters, 30)
+if not monstersFolder then
+	warn("MonsterPresenceFXController: Monsters folder never appeared; presence FX disabled")
+	return
 end
 monstersFolder.ChildAdded:Connect(addRig)
 monstersFolder.ChildRemoved:Connect(removeRig)
+for _, rig in monstersFolder:GetChildren() do
+	addRig(rig)
+end
 
-local span = M.DustFullSpeed - M.DustMoveSpeed
+local span = math.max(M.DustFullSpeed - M.DustMoveSpeed, 1e-3)
 RunService.Heartbeat:Connect(function(dt)
 	if dt <= 0 then
 		return
@@ -133,6 +146,9 @@ RunService.Heartbeat:Connect(function(dt)
 			local delta = root.Position - s.lastPos
 			s.lastPos = root.Position
 			local planar = Vector3.new(delta.X, 0, delta.Z).Magnitude / dt
+			if planar > MAX_PLAUSIBLE_SPEED then
+				planar = 0 -- teleport frame (rig pivoted home); measure cleanly next frame.
+			end
 			s.speed += (planar - s.speed) * math.min(dt * 8, 1)
 
 			-- Foot dust scales from nothing (still) to full (sprinting).

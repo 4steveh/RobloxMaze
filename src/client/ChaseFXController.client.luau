@@ -88,6 +88,20 @@ local function glowOf(rig)
 	return nil
 end
 
+-- Drop a despawned rig's cached glow so neither cache leaks entries for monsters
+-- that have left Workspace.Monsters (mirrors MonsterAnimController.removeRig).
+local function forgetRig(rig)
+	local g = glowByRig[rig]
+	if g then
+		glowBase[g] = nil
+	end
+	glowByRig[rig] = nil
+end
+task.spawn(function()
+	local monsters = Workspace:WaitForChild(WorldFolders.Monsters)
+	monsters.ChildRemoved:Connect(forgetRig)
+end)
+
 local current = 0
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
@@ -97,7 +111,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local target = 0
 	local nearestAggro, nearestDist, nearestProx = nil, math.huge, 0
 	if hrp and monsters then
-		local span = C.ThreatStartDistance - C.ThreatMaxDistance
+		local span = math.max(C.ThreatStartDistance - C.ThreatMaxDistance, 1e-3)
 		for _, rig in monsters:GetChildren() do
 			local rRoot = rig:FindFirstChild("HumanoidRootPart")
 			local st = rig:GetAttribute(STATE)

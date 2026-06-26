@@ -137,6 +137,7 @@ local function eligible(player: Player): boolean
 	return player:GetAttribute(Attributes.InSafeRoom) ~= true
 		and player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 		and player:GetAttribute(Attributes.RespawnGrace) ~= true
+		and player:GetAttribute(Attributes.Downed) ~= true
 end
 
 -- Fire: lethal + loud, then cool down before it can trigger again.

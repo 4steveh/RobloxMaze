@@ -62,12 +62,16 @@ sprintIntent.OnServerEvent:Connect(function(player, held)
 		return -- malformed payload -> ignore
 	end
 	local s = ensure(player)
+	-- Coalesce the intent so a transition can never be lost: the client only sends on
+	-- a state CHANGE, so a quick tap-release whose release lands inside the rate limit
+	-- would otherwise strand s.held=true (involuntary sprint + stamina drain). Always
+	-- converge to the latest held-state, then throttle only the heavier bookkeeping.
+	s.held = held
 	local now = os.clock()
 	if now - s.lastIntent < P.IntentRateLimit then
-		return -- spam -> ignore
+		return -- spam -> throttle (the held-state above already converged)
 	end
 	s.lastIntent = now
-	s.held = held
 end)
 
 -- The server alone advances stamina and sets WalkSpeed, every frame.

@@ -25,6 +25,11 @@ local STATE_ATTRIBUTE = Attributes.MonsterState -- matches the rig attribute Mon
 -- [rig] = { root, joints = { [Part1Name] = Motor6D }, species, lastPos, speed, phase, moveW, chaseW }
 local rigs = {}
 
+-- A catch/round-reset teleports the rig home (PivotTo); that one-frame jump reads as a huge
+-- instantaneous speed. Real creature locomotion stays well under this, so any planar speed
+-- above it is a teleport frame to reject -- not motion to animate (which would twitch the gait).
+local MAX_PLAUSIBLE_SPEED = 80 -- studs/s
+
 -- Every cosmetic joint, keyed by the segment (Part1) name the gait recipe returns.
 local function collectJoints(rig)
 	local joints = {}
@@ -75,12 +80,20 @@ local function removeRig(rig)
 	rigs[rig] = nil
 end
 
-local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
-for _, rig in monstersFolder:GetChildren() do
-	addRig(rig)
+-- Bounded wait: if MonsterService errors before parenting the folder, don't yield forever
+-- (which would silently disable the gait) -- warn and bail. Connect ChildAdded BEFORE the
+-- initial sweep so a rig parented mid-sweep can't be missed (addRig is idempotent).
+local monstersFolder = Workspace:FindFirstChild(WorldFolders.Monsters)
+	or Workspace:WaitForChild(WorldFolders.Monsters, 30)
+if not monstersFolder then
+	warn("MonsterAnimController: Monsters folder never appeared; gait disabled")
+	return
 end
 monstersFolder.ChildAdded:Connect(addRig)
 monstersFolder.ChildRemoved:Connect(removeRig)
+for _, rig in monstersFolder:GetChildren() do
+	addRig(rig)
+end
 
 -- Critically-damped approach (frame-rate independent), so weights never snap.
 local function approach(current, target, rate, dt)
@@ -117,6 +130,9 @@ RunService.PreSimulation:Connect(function(dt)
 			local delta = root.Position - s.lastPos
 			s.lastPos = root.Position
 			local planar = Vector3.new(delta.X, 0, delta.Z).Magnitude / dt
+			if planar > MAX_PLAUSIBLE_SPEED then
+				planar = 0 -- teleport frame (rig pivoted home); measure cleanly next frame.
+			end
 			s.speed = approach(s.speed, planar, p.SpeedSmoothing, dt)
 
 			-- Blend weights: move (fade the gait in) and chase (flatten/quicken/hunch it).

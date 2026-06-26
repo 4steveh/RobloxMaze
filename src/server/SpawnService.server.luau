@@ -129,7 +129,12 @@ local function onCharacterAdded(player, character)
 	end
 	humanoid.Died:Connect(function()
 		task.wait(Config.Respawn.RespawnDelay)
-		respawn(player)
+		-- Only respawn off OUR death: a RoundReset (which respawns everyone) within
+		-- RespawnDelay already gave the player a fresh character, so this stale timer
+		-- must not yank them back into the spawn moments into the new round.
+		if player.Character == character then
+			respawn(player)
+		end
 	end)
 end
 

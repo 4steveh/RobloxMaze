@@ -113,11 +113,23 @@ end
 -- A round nobody escapes still ENDS: after MaxRoundSeconds with no win, force a fresh round so the
 -- maze re-carves and coins pay out (the never-worth-zero floor). beginNewRound guards re-entry, and
 -- the summaries carry escaped=false. 0 disables the safety net.
+local function anyWon()
+	-- A win is already pending: onWin() owns that reset (after the celebration). The safety net
+	-- must NOT pre-empt it, or a win landing right as the clock crosses MaxRoundSeconds gets its
+	-- celebration cut to ~0s by this 1s-cadence watcher.
+	for _, player in Players:GetPlayers() do
+		if player:GetAttribute(Attributes.GameState) == Enums.GameState.Won then
+			return true
+		end
+	end
+	return false
+end
+
 if R.MaxRoundSeconds and R.MaxRoundSeconds > 0 then
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			if not resetting and os.clock() - roundStartClock >= R.MaxRoundSeconds then
+			if not resetting and not anyWon() and os.clock() - roundStartClock >= R.MaxRoundSeconds then
 				beginNewRound()
 			end
 		end

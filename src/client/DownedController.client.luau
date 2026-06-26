@@ -252,6 +252,14 @@ end
 Players.PlayerRemoving:Connect(unwatch)
 
 RunService.RenderStepped:Connect(function()
+	-- Lazily (re)try a beacon for any downed teammate whose adornee (head/HRP) wasn't
+	-- present the instant Downed flipped — the body can stream in a frame or two later, and
+	-- makeBeacon no-ops until it resolves, so without this retry they'd get NO beacon all down.
+	for other in connections do
+		if not beacons[other] and other:GetAttribute(Attributes.Downed) == true then
+			makeBeacon(other)
+		end
+	end
 	for other, bb in beacons do
 		local fill = bb:FindFirstChild("Fill", true)
 		if fill then

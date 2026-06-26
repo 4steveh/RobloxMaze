@@ -27,6 +27,11 @@ local OCC = MA.Occlusion
 local player = Players.LocalPlayer
 local monsterBus = AudioGroups.get("Monster")
 
+-- A catch/round-reset teleports the rig home (PivotTo); that one-frame jump reads as a huge
+-- instantaneous speed. Real creature locomotion stays well under this, so a step that fast is a
+-- teleport frame to reject -- not real motion that should fire a spurious footstep at the home.
+local MAX_PLAUSIBLE_SPEED = 80 -- studs/s
+
 -- Non-spatial heartbeat (volume + rate ramp with the nearest HUNTING rig's closeness).
 local heartbeat = Instance.new("Sound")
 heartbeat.Name = "Heartbeat"
@@ -180,12 +185,20 @@ local function removeRig(rig)
 	end
 end
 
-local monstersFolder = Workspace:WaitForChild(WorldFolders.Monsters)
-for _, rig in monstersFolder:GetChildren() do
-	addRig(rig)
+-- Bounded wait: if MonsterService errors before parenting the folder, don't yield forever
+-- (which would silently disable the rig audio) -- warn and bail. Connect ChildAdded BEFORE the
+-- initial sweep so a rig parented mid-sweep can't be missed (addRig is idempotent).
+local monstersFolder = Workspace:FindFirstChild(WorldFolders.Monsters)
+	or Workspace:WaitForChild(WorldFolders.Monsters, 30)
+if not monstersFolder then
+	warn("MonsterAudioController: Monsters folder never appeared; rig audio disabled")
+	return
 end
 monstersFolder.ChildAdded:Connect(addRig)
 monstersFolder.ChildRemoved:Connect(removeRig)
+for _, rig in monstersFolder:GetChildren() do
+	addRig(rig)
+end
 
 -- The closeness of the nearest HUNTING rig (0..1), scaled by its state: full for
 -- Chase/Investigate, softer for Alert, and only if right on top of you otherwise.
@@ -204,7 +217,7 @@ local function threatLevel(phrp): number
 				scale = 0.6 -- a patrolling monster RIGHT next to you still spikes the pulse
 			end
 			if scale > 0 and d <= MA.HeartbeatStartDistance then
-				local span = MA.HeartbeatStartDistance - MA.HeartbeatMaxDistance
+				local span = math.max(MA.HeartbeatStartDistance - MA.HeartbeatMaxDistance, 1e-3)
 				local t = math.clamp((MA.HeartbeatStartDistance - d) / span, 0, 1) * scale
 				if t > best then
 					best = t
@@ -224,6 +237,9 @@ RunService.RenderStepped:Connect(function(dt)
 		if a.hrp.Parent then
 			local moved = (a.hrp.Position - a.lastPos).Magnitude
 			a.lastPos = a.hrp.Position
+			if moved / dt > MAX_PLAUSIBLE_SPEED then
+				moved = 0 -- teleport frame (rig pivoted home); no spurious footstep at home.
+			end
 			a.stepAccum += moved
 			if a.stepAccum >= MA.FootstepStride then
 				a.stepAccum = 0

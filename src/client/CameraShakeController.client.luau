@@ -66,7 +66,7 @@ local function threatTarget(): number
 	if not (hrp and monsters) then
 		return 0
 	end
-	local span = C.ThreatStartDistance - C.ThreatMaxDistance
+	local span = math.max(C.ThreatStartDistance - C.ThreatMaxDistance, 1e-3)
 	local target = 0
 	for _, rig in monsters:GetChildren() do
 		local rRoot = rig:FindFirstChild("HumanoidRootPart")

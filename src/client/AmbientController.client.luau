@@ -2,20 +2,23 @@
 -- AmbientController.client.luau
 -- The room's voice: a looped HVAC/drone bed, plus the signature daycare scare -- an
 -- intermittent 3D music-box motif drifting in from the mascot statue (any part tagged
--- MusicBoxEmitter). Also switches global reverb on SafeRoom enter/leave using the
--- server-authoritative SafeRoom remotes (the client never detects occupancy itself).
+-- MusicBoxEmitter). Also switches global reverb by re-deriving it from the
+-- server-authoritative InSafeRoom attribute (the client never detects occupancy itself).
 -- All client-side and uncontested (allowed per CLAUDE.md).
 
 local SoundService = game:GetService("SoundService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local Config = require(ReplicatedStorage.Config)
-local Remotes = require(ReplicatedStorage.Remotes)
+local Attributes = require(ReplicatedStorage.Attributes)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
+
+local player = Players.LocalPlayer
 
 local AM = Config.Audio.Ambient
 local ambientBus = AudioGroups.get("Ambient")
@@ -102,11 +105,17 @@ task.spawn(function()
 	end
 end)
 
--- Reverb follows safe-room occupancy (off the authoritative remotes).
-SoundService.AmbientReverb = Config.Audio.Reverb.Maze
-Remotes.get(Remotes.Names.SafeRoomEntered).OnClientEvent:Connect(function()
-	SoundService.AmbientReverb = Config.Audio.Reverb.SafeRoom
-end)
-Remotes.get(Remotes.Names.SafeRoomLeft).OnClientEvent:Connect(function()
+-- Reverb follows safe-room occupancy, re-derived from the authoritative InSafeRoom
+-- attribute (self-healing: overlapping zones / an in-flight respawn can't strand it).
+local function applyReverb()
+	SoundService.AmbientReverb = if player:GetAttribute(Attributes.InSafeRoom) == true
+		then Config.Audio.Reverb.SafeRoom
+		else Config.Audio.Reverb.Maze
+end
+applyReverb()
+player:GetAttributeChangedSignal(Attributes.InSafeRoom):Connect(applyReverb)
+-- A respawn can't inherit a stale reverb: the server clears InSafeRoom on a fresh
+-- character, but reset locally too so there's no window between spawn and that write.
+player.CharacterAdded:Connect(function()
 	SoundService.AmbientReverb = Config.Audio.Reverb.Maze
 end)
