@@ -23,6 +23,48 @@ Remotes.init()
 local enteredRemote = Remotes.get(Remotes.Names.SafeRoomEntered)
 local leftRemote = Remotes.get(Remotes.Names.SafeRoomLeft)
 
+-- Cosmetic sanctuary tell (decides NOTHING -- detection stays the spatial poll below). A SafeRoom
+-- was invisible from outside (a trigger volume), so safety wasn't FINDABLE down a corridor. We attach
+-- a calm green outline + soft glow per room -- the green half of the red=danger (trap pad) / green=safe
+-- language. One-time per part (idempotent find-or-create, so a re-tagged part never doubles up), built
+-- here on the server so the marks replicate to every client. Discovery.observe fires for existing rooms
+-- AND any tagged later; children die with their part, so onRemoved needs no cleanup.
+local function markSafeRoom(part)
+	if not part:IsA("BasePart") then
+		return -- only solid trigger volumes carry the visual; ignore folders/attachments tagged by mistake
+	end
+
+	-- Green wire outline so the room's bounds read at a glance from down a dark hall. Type-guard the
+	-- find-or-create (like TrapService) so a wrongly-typed pre-existing "SafeOutline" child can't make
+	-- the property writes below throw and break idempotency.
+	local outline = part:FindFirstChild("SafeOutline")
+	if not (outline and outline:IsA("SelectionBox")) then
+		outline = Instance.new("SelectionBox")
+		outline.Name = "SafeOutline"
+		outline.Adornee = part
+		outline.LineThickness = 0.05 -- a thin calm line, not a thick beacon
+		outline.Parent = part
+	end
+	outline.Color3 = Config.SafeRoom.OutlineColor
+	outline.SurfaceColor3 = Config.SafeRoom.OutlineColor
+	outline.Transparency = Config.SafeRoom.OutlineTransparency
+
+	-- Soft inviting glow so the sanctuary self-lights in the dark (kept gentle -- it must not outshine
+	-- the keys/exit, which are the objective). Shadows off: it's a wash, not a caster.
+	local glow = part:FindFirstChild("SafeGlow")
+	if not (glow and glow:IsA("PointLight")) then
+		glow = Instance.new("PointLight")
+		glow.Name = "SafeGlow"
+		glow.Shadows = false
+		glow.Parent = part
+	end
+	glow.Color = Config.SafeRoom.GlowColor
+	glow.Brightness = Config.SafeRoom.GlowBrightness
+	glow.Range = Config.SafeRoom.GlowRange
+end
+
+Discovery.observe(Tags.SafeRoom, markSafeRoom)
+
 -- Whether each player was inside any SafeRoom on the previous tick.
 local insideLast = {}
 

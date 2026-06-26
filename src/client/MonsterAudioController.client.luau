@@ -56,10 +56,23 @@ sting.Volume = MA.ChaseStingVolume
 sting.SoundGroup = monsterBus
 sting.Parent = SoundService
 
+-- A SOFTER sting on Alert (the monkey heard you) -- the "it heard you" beat had only the heartbeat
+-- ramp before, no discrete hit. Reuses the chase-sting clip, quieter + pitched down (a warning, not
+-- the full commit). Distinct enough by ear that Alert and Chase read differently.
+local alertSting = Instance.new("Sound")
+alertSting.Name = "AlertSting"
+alertSting.SoundId = MA.ChaseStingId
+alertSting.Volume = MA.AlertStingVolume
+alertSting.PlaybackSpeed = MA.AlertStingPitch
+alertSting.SoundGroup = monsterBus
+alertSting.Parent = SoundService
+
 local stateRemote = Remotes.get(Remotes.Names.MonsterStateChanged)
 stateRemote.OnClientEvent:Connect(function(state)
 	if state == Enums.MonsterState.Chase then
 		sting:Play()
+	elseif state == Enums.MonsterState.Alert then
+		alertSting:Play()
 	end
 end)
 

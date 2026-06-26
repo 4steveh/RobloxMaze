@@ -7,6 +7,19 @@
 
 local Config = {}
 
+-- Font resolution ----------------------------------------------------------------
+-- The UI theme (Config.UI below) wants modern faces (Builder Sans, Creepster) that may not
+-- exist on every engine/client. Indexing a missing Enum.Font member THROWS, which -- in a frozen,
+-- load-time Config -- would brick the entire game. So resolve fonts by NAME against the live
+-- Enum.Font set and fall back cleanly when a face is unavailable. Built once here, at load.
+local fontByName: { [string]: EnumItem } = {}
+for _, item in Enum.Font:GetEnumItems() do
+	fontByName[item.Name] = item
+end
+local function uiFont(name: string, fallback: EnumItem): EnumItem
+	return fontByName[name] or fallback
+end
+
 -- Flashlight --------------------------------------------------------------------
 -- The one deliberate client-side resource: uncontested, latency-sensitive, and
 -- nothing else depends on it (see CLAUDE.md). Battery is measured in "seconds of
@@ -39,6 +52,21 @@ Config.Flashlight = table.freeze({
 	MonsterFlickerStartDistance = 28, -- studs: only a CLOSE hunter stutters the beam (was too eager at 40)
 	MonsterFlickerMaxScale = 0.28, -- max fraction of brightness the stutter can subtract: a fear beat, never a blackout
 	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
+
+	-- Volumetric beam SHAFT (render-only, client): a faint cone of light riding the SpotLight, so
+	-- sweeping the flashlight reads as a physical shaft cutting the dark (together with the dust motes
+	-- AtmosphereFX adds). Built as a Beam on the emitter (FaceCamera), so it always presents to the
+	-- viewer. Kept deliberately SUBTLE -- a hint of volume, never a solid bar of light. Enabled=false
+	-- removes it entirely (e.g. if a device renders beams poorly).
+	Beam = table.freeze({
+		Enabled = true,
+		Length = 24, -- studs the shaft reaches (< Range so it fades out before the lit pool ends)
+		WidthNear = 0.6, -- studs wide at the lens...
+		WidthFar = 9, -- ...flaring to this at the far end (a soft cone)
+		Color = Color3.fromRGB(228, 234, 245), -- cool white, matched to the beam
+		Transparency = 0.9, -- VERY faint at the lens (it fades to fully clear at the far end)
+		Brightness = 0.5, -- Beam.Brightness (additive glow); kept low so it never washes the scene
+	}),
 })
 
 -- Keys --------------------------------------------------------------------------
@@ -55,10 +83,23 @@ Config.KeyModel = table.freeze({
 	Size = Vector3.new(1.6, 2.6, 0.5), -- studs
 	Color = Color3.fromRGB(64, 74, 58), -- desaturated, sickly
 	LightColor = Color3.fromRGB(125, 205, 95), -- eerie glow
-	LightBrightness = 5,
-	LightRange = 16,
+	LightBrightness = 7, -- brighter so a key is a clear beacon down a dark corridor (was a faint 5)
+	LightRange = 20,
 	HoverHeight = 3, -- studs above the KeySpot marker
 	SpinSpeed = 1.1, -- rad/s the floating key slowly rotates (draws the eye)
+	-- A gentle vertical BOB on top of the spin, so the key FLOATS like a live, magical object (an
+	-- inert spinning part reads as scenery; a bobbing one reads as "pick me up"). KeyService applies it.
+	BobHeight = 0.45, -- studs the key rises/falls
+	BobSpeed = 2.2, -- rad/s of the bob cycle
+
+	-- Sparkle: a few slow motes glinting off the key so it reads as TREASURE down a dark
+	-- corridor (server-built ParticleEmitter, so it replicates -- the whole lobby sees it).
+	SparkleTexture = "rbxasset://textures/particles/sparkles_main.dds", -- built-in (no upload)
+	SparkleColor = Color3.fromRGB(175, 240, 135), -- echoes the key's green glow
+	SparkleRate = 11, -- motes/second (more glint so it reads as treasure)
+	SparkleSize = 0.55, -- studs
+	SparkleLifetime = 1.3, -- seconds
+	SparkleSpeed = 1.5, -- studs/s upward drift
 })
 
 -- Spatial detection -------------------------------------------------------------
@@ -172,8 +213,19 @@ Config.Maze = table.freeze({
 	WallThickness = 2,
 	WallHeight = 14, -- floor-to-ceiling (matches the perimeter walls)
 	WellDepth = 20, -- studs an OPEN wall slides DOWN (its top ends well below the floor, hidden)
-	WallColor = Color3.fromRGB(70, 74, 70), -- matches the maze's slate walls
+	WallColor = Color3.fromRGB(70, 74, 70), -- matches the maze's slate walls (the fallback when WallVariation is empty)
 	WallMaterial = Enum.Material.Slate,
+
+	-- Regional wall variation: instead of one flat grey grid, walls cycle through these {Color, Material}
+	-- pairs by grid region, so corridors read as distinct ZONES (a cheap "this is a different part of the
+	-- building" tell in a procedural maze). Picked per wall from its world position when the superstructure
+	-- is built -- zero runtime cost. Materials stay rough + industrial so the place still reads as ONE
+	-- derelict structure, just with texture/tone variety. Empty = the single WallColor/WallMaterial above.
+	WallVariation = table.freeze({
+		table.freeze({ Color = Color3.fromRGB(70, 74, 70), Material = Enum.Material.Slate }), -- cold grey stone
+		table.freeze({ Color = Color3.fromRGB(80, 71, 62), Material = Enum.Material.Concrete }), -- grimy poured concrete
+		table.freeze({ Color = Color3.fromRGB(60, 66, 72), Material = Enum.Material.Cobblestone }), -- dank blue-grey block
+	}),
 
 	-- Generation.
 	BraidFraction = 0.08, -- open ~8% of extra edges (fewer dead-ends; only OPENS, can't disconnect)
@@ -245,6 +297,12 @@ Config.HUD = table.freeze({
 	StaminaFillColor = Color3.fromRGB(120, 230, 140),
 	StaminaLowColor = Color3.fromRGB(235, 180, 70),
 
+	-- Gauge captions (so a new player knows what the two unlabeled left-corner bars ARE -- mirrors
+	-- the NoiseMeter's "NOISE" caption on the right). Small all-caps tags sitting above each gauge.
+	GaugeLabelSize = 11, -- px text size for the BATTERY / STAMINA captions
+	BatteryLabel = "BATTERY",
+	StaminaLabel = "STAMINA",
+
 	-- Transient feedback toast (key pickup / locked door), centered below the tracker
 	ToastYScale = 0.30, -- screen-height fraction for the toast's vertical position
 	ToastWidth = 420, -- px
@@ -255,6 +313,14 @@ Config.HUD = table.freeze({
 	ArrowSize = 64, -- px
 	ArrowBottomOffset = 120, -- px from the bottom edge
 	ArrowColor = Color3.fromRGB(240, 205, 70),
+	ArrowLabel = "EXIT", -- caption under the gold exit arrow, so its glyph can't be mistaken for the green KEY arrow
+	ArrowLabelSize = 14, -- px
+
+	-- Key-pickup SCREEN PULSE: a brief full-screen gold flash on every pickup, so a key grabbed
+	-- mid-chase (eyes on the monster, not the pip row) still registers. Render-only juice atop the pip pop.
+	PickupPulseColor = Color3.fromRGB(240, 205, 70),
+	PickupPulseTransparency = 0.78, -- the pulse's most-opaque alpha at its peak (subtle -- a wash, not a blink)
+	PickupPulseSeconds = 0.45, -- seconds the pulse fades from peak to clear
 
 	-- Win overlay
 	WinBackColor = Color3.fromRGB(10, 14, 12),
@@ -278,7 +344,7 @@ Config.HUD = table.freeze({
 	-- Key pip POP: a collected key should feel TACTILE, so the just-filled pip overshoots in
 	-- scale and flashes its stroke bright, then settles -- not a flat BackgroundColor flip.
 	PipPopScale = 1.5, -- the filled pip overshoots to this x its size...
-	PipPopSeconds = 0.34, -- ...then Back-eases back to 1x over this long
+	PipPopSeconds = 0.5, -- ...then Back-eases back to 1x over this long (lengthened so a mid-chase pickup still registers)
 	PipPopStrokeColor = Color3.fromRGB(255, 246, 190), -- the brief bright stroke flash on fill
 	PipPopStrokeThickness = 4, -- px the stroke thickens to during the flash
 
@@ -399,9 +465,9 @@ Config.Monster = table.freeze({
 			BodyAssetName = "BunnyBody", -- the AI-generated MULTI-PART mascot (torso+head+4 limbs) -> articulated rig
 			ModelYOffset = -0.9, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
-			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a faint red "it's watching" glow that reads in the dark
-			EyeGlowBrightness = 0.7,
-			EyeGlowRange = 7,
+			EyeGlowColor = Color3.fromRGB(210, 40, 40), -- a red "it's watching" glow that reads in the dark
+			EyeGlowBrightness = 1.4, -- brighter so the eyes read as a menacing pair in the fog at idle (ChaseFX still flares them to 4.0 in a hunt)
+			EyeGlowRange = 9,
 		}),
 
 		-- The monkey: the near-blind NOISE hunter (escape by going QUIET). It HEARS the
@@ -452,8 +518,8 @@ Config.Monster = table.freeze({
 			ModelYOffset = -1.5, -- drops the torso so the jointed legs reach the floor
 			ModelFaceYaw = 0, -- head sits at the torso's -Z, which is the rig forward
 			EyeGlowColor = Color3.fromRGB(250, 210, 60), -- sickly yellow (vs bunny red): instant species read in the dark
-			EyeGlowBrightness = 0.7,
-			EyeGlowRange = 7,
+			EyeGlowBrightness = 1.5, -- a touch brighter than the bunny -- the bigger silhouette's eyes loom harder in the dark
+			EyeGlowRange = 9,
 		}),
 	}),
 
@@ -560,6 +626,10 @@ Config.Noise = table.freeze({
 	MeterLoudColor = Color3.fromRGB(235, 70, 60), -- fill once over the threshold (the monkey hears you)
 	MeterThresholdColor = Color3.fromRGB(240, 220, 120), -- the "audible" marker line
 	MeterLabel = "NOISE",
+	-- A tiny caption pinned over the threshold marker so the line's MEANING is explicit: cross it and
+	-- the monkey can hear you. Teaches the noise counter at the HUD element itself (not only via a tip).
+	MeterThresholdLabel = "MONKEY HEARS", -- centered over the marker line
+	MeterThresholdLabelSize = 10, -- px
 })
 
 -- Noise DECOY: noise as a WEAPON, not just a liability (the Granny lesson) ----------
@@ -575,6 +645,7 @@ Config.Decoy = table.freeze({
 	Cooldown = 8, -- seconds between throws (server-authoritative)
 	IntentRateLimit = 0.25, -- min seconds between accepted ThrowDecoy messages (anti-spam, hostile input)
 	WallPadding = 2.5, -- studs short of a hit wall the decoy lands (so it never lands inside geometry)
+	LandingHeight = 0.6, -- studs above the floor the decoy rests (so it reads as sitting ON the ground, not buried)
 	-- The monkey re-homes on each pulse, so a few spaced pulses keep it drawn to the spot while the
 	-- decoy rattles (each NoiseEvent is a fresh one-shot the monkey investigates).
 	NoisePulses = 3,
@@ -588,6 +659,10 @@ Config.Decoy = table.freeze({
 	LightColor = Color3.fromRGB(255, 240, 150),
 	LightBrightness = 2.0,
 	LightRange = 12,
+	-- Visible LIFE while it rattles: a steady spin + a brightness flash on each noise pulse, so the
+	-- decoy reads as an active, attention-grabbing noisemaker (which is exactly what it is to the monkey).
+	SpinSpeed = 4.0, -- rad/s the anchored decoy spins as it rattles
+	PulseBrightnessScale = 2.0, -- the light flashes to this x its base brightness on each NoiseEvent pulse, then eases back
 	RattleSoundId = "rbxassetid://9119717523", -- the verified mechanical-click id (a rattling tick)
 	RattleVolume = 0.7,
 	RattleRange = 70, -- studs RollOffMaxDistance (it should read from a distance -- that's the point)
@@ -628,6 +703,14 @@ Config.Traps = table.freeze({
 	GlowPulseHz = 1.6, -- the glow gently pulses so a trap reads as "alive / dangerous", not decoration
 	GlowPulseDepth = 0.4, -- fraction of brightness the pulse dips (0..1)
 
+	-- A flat translucent danger PAD on the floor under each trap (server-built, replicated): the threat
+	-- ZONE reads as a clear red area you learn to avoid -- the red half of a red=danger / green=safe
+	-- language (SafeRooms get a green outline). Neon so it self-lights in the dark; sized to TriggerRadius.
+	-- Cosmetic only -- detection is the spatial poll, unchanged. TrapService builds it on each trap on boot.
+	PadColor = Color3.fromRGB(150, 26, 22),
+	PadTransparency = 0.55,
+	PadThickness = 0.1, -- studs (a thin disc lying just over the floor)
+
 	-- Fire effect (client renders a dart streaking along the arrow + an impact flash).
 	DartColor = Color3.fromRGB(200, 200, 210),
 	DartLength = 6, -- studs of the dart streak
@@ -637,6 +720,19 @@ Config.Traps = table.freeze({
 	ClickId = "rbxassetid://9119717523", -- mechanical click on wind-up
 	FireId = "rbxassetid://9120188626", -- a hard thunk on fire
 	FireVolume = 0.8,
+})
+
+-- Safe-room marking (server-built, replicated) ------------------------------------
+-- The one sanctuary was invisible from outside (a trigger volume with only a client grade on ENTRY).
+-- A calm green outline + soft glow on each SafeRoom makes safety FINDABLE down a corridor -- the green
+-- half of the red=danger (trap pad) / green=safe language. SafeRoomService owns occupancy detection;
+-- this is just the cosmetic tell it also builds on boot (one SelectionBox + one PointLight per room).
+Config.SafeRoom = table.freeze({
+	OutlineColor = Color3.fromRGB(90, 220, 130), -- calm green: the inverse of the trap's red
+	OutlineTransparency = 0.4,
+	GlowColor = Color3.fromRGB(120, 230, 150),
+	GlowBrightness = 1.1, -- a gentle inviting glow (not a beacon -- it shouldn't outshine the keys/exit)
+	GlowRange = 20,
 })
 
 -- Lighting / atmosphere ---------------------------------------------------------
@@ -753,6 +849,8 @@ Config.Compass = table.freeze({
 	ArrowBottomOffset = 200, -- px from the bottom edge (sits above the exit arrow)
 	ArrowColor = Color3.fromRGB(150, 230, 110),
 	LabelText = "KEY",
+	ArrowCaption = "KEY", -- small caption under the green edge arrow (pairs with the gold "EXIT" arrow so the two glyphs never read alike)
+	ArrowCaptionSize = 13, -- px
 })
 
 -- Onboarding: first-30-seconds direction (intro, controls, objective tracker) -----
@@ -782,6 +880,17 @@ Config.Onboarding = table.freeze({
 	-- Shown lobby-wide when the pre-round PEACE window ends (a VISUAL companion to the HuntBegins sting).
 	HuntBeginsTip = "THE HUNT BEGINS — the monsters are awake now",
 	TipSeconds = 5, -- how long a tip holds before fading
+
+	-- Threat legend (intro): a brief two-line key pairing each monster's COLOUR to its COUNTER, shown
+	-- under the spawn banner so a new player knows what the two creatures are BEFORE meeting them. The
+	-- colours mirror the radar blips + eye-glow tells (red = the seeing bunny, yellow = the hearing
+	-- monkey), so the legend, the radar, and the glowing eyes all teach the SAME colour language.
+	LegendTitle = "KNOW YOUR HUNTERS",
+	LegendBunnyColor = Color3.fromRGB(220, 70, 66), -- red: the VISION stalker (mirrors its eye-glow / radar blip)
+	LegendBunnyText = "RED — it SEES you. Break line of sight & sprint.",
+	LegendMonkeyColor = Color3.fromRGB(245, 205, 70), -- yellow: the NOISE hunter
+	LegendMonkeyText = "YELLOW — it HEARS you. Move quietly or throw a DECOY (Q).",
+	LegendSeconds = 7, -- how long the legend holds before fading (a touch longer than the banner -- it's denser)
 })
 
 -- On-screen touch controls (mobile / iPad) --------------------------------------
@@ -861,6 +970,10 @@ Config.Economy = table.freeze({
 	ParticipationFloor = 5, -- coins just for playing the round
 	KeyReward = 10, -- coins per key the team held at round end
 	EscapeBonus = 50, -- coins for reaching the exit
+	-- Bonus on top of EscapeBonus when 2+ players escape the SAME round -- a small reward for
+	-- winning TOGETHER (an incentive to cooperate, not just share a lobby). Kept SUBLINEAR (well
+	-- under EscapeBonus) so solo play is never under-rewarded by comparison. 0 disables it.
+	CoopEscapeBonus = 25,
 	SurvivalPerSecond = 0.25, -- coins per second survived...
 	SurvivalCap = 240, -- ...capped at this many seconds (so camping isn't farmed)
 	ShopActionRateLimit = 0.2, -- min seconds between accepted ShopAction messages (anti-spam, hostile input)
@@ -886,6 +999,9 @@ Config.Feedback = table.freeze({
 	ToastColor = Color3.fromRGB(240, 230, 210),
 	CaughtText = "CAUGHT!",
 	CaughtColor = Color3.fromRGB(220, 60, 55),
+	-- Co-op key attribution: when a TEAMMATE grabs a key, the toast names them ("Steve got a key 2/3")
+	-- so the lobby SEES who's contributing -- shared progress reads as teamwork, not an anonymous tick.
+	KeyBySuffix = "got a key",
 	LockedTextPrefix = "EXIT LOCKED", -- shown with the live count: "EXIT LOCKED — 3 KEYS NEEDED"
 	-- Shown to OTHER players (not the escapee) when someone reaches the exit and the shared
 	-- round is about to reset -- so a co-op escape reads as an event, not a silent yank.
@@ -994,6 +1110,10 @@ Config.Audio = table.freeze({
 		MusicBoxPitchWobble = 0.06, -- +/- PlaybackSpeed wobble (a detuning music box)
 		MusicBoxWobbleHz = 0.4, -- Hz of the detune wobble
 		MusicBoxFadeSeconds = 1.5, -- fade-out time when a drift-in ends (vs an abrupt Stop)
+		-- Per-drift-in random TRANSPOSE: each play picks a fixed base PlaybackSpeed within +/- this of 1
+		-- (the continuous wobble rides on top), so no two drift-ins sit at the same pitch -- a haunted box
+		-- that's a little different every time, which fights habituation over a long session.
+		MusicBoxTransposeRange = 0.07,
 	}),
 
 	-- Monster cues: 3D breathing/footsteps on the rig + a non-spatial heartbeat the
@@ -1008,6 +1128,11 @@ Config.Audio = table.freeze({
 		FootstepStride = 3.5, -- studs the rig travels per footstep sound
 		ChaseStingId = "rbxassetid://1841353932", -- one-shot on Patrol->Chase
 		ChaseStingVolume = 0.75,
+		-- A SOFTER sting on entering Alert (the monkey heard you) -- the "it heard you" beat had only the
+		-- heartbeat ramp, no discrete hit. Reuses the verified chase-sting id, quieter + pitched down so
+		-- it reads as a warning, not the full chase commit (which still gets the louder ChaseSting above).
+		AlertStingVolume = 0.42,
+		AlertStingPitch = 0.85,
 		HeartbeatId = "rbxassetid://139481207162657", -- non-spatial, scaled by distance
 		HeartbeatVolume = 0.7,
 		HeartbeatStartDistance = 45, -- studs at which the heartbeat fades in (slow/faint)
@@ -1081,6 +1206,18 @@ Config.Audio = table.freeze({
 	Stingers = table.freeze({
 		KeyChimeId = "rbxassetid://7381723941", -- KeyCollected (UI bus)
 		KeyChimeVolume = 0.6,
+		-- The FINAL key (team hits RequiredToWin) is a triumphant beat the mix was missing -- a brighter,
+		-- louder flourish layered over the normal chime. Reuses the verified chime id, pitched UP so it
+		-- reads as "objective complete!" (distinct from the per-key chime and from the win jingle).
+		KeyCompleteId = "rbxassetid://7381723941",
+		KeyCompleteVolume = 0.85,
+		KeyCompletePitch = 1.35,
+		-- Entering a SafeRoom was acoustically invisible (only a reverb swap). A warm, low bell "exhale"
+		-- on entry gives the sanctuary an audible arrival to match SafeRoomFXController's visual bloom.
+		-- Reuses the verified chime id, pitched DOWN into a soft hearth tone (Ambient bus, low volume).
+		SafeRoomReliefId = "rbxassetid://7381723941",
+		SafeRoomReliefVolume = 0.4,
+		SafeRoomReliefPitch = 0.6,
 		LockedThunkId = "rbxassetid://9120188626", -- ExitLocked (SFX bus)
 		LockedThunkVolume = 0.65,
 		WinJingleId = "rbxassetid://9041792228", -- GameWon (Music bus)
@@ -1090,6 +1227,119 @@ Config.Audio = table.freeze({
 		JumpscareId = "rbxassetid://139306955269282", -- MonsterCaught (full-volume, ducks others)
 		JumpscareVolume = 1.0,
 	}),
+})
+
+-- UI theme (the single source of UI typography + styling) ------------------------
+-- Before this, every HUD controller hardcoded its own fonts/strokes/corners -> a flat, dated,
+-- inconsistent look (30+ scattered Gotham references, zero gradients). These are the shared
+-- design tokens the controllers compose, so the whole HUD reads as ONE designed system. Fonts
+-- resolve through uiFont() so a modern face is used where available and degrades cleanly.
+Config.UI = table.freeze({
+	-- Typography. Builder Sans is Roblox's modern UI face; Creepster is the horror display cut
+	-- (used only for short impact words -- CAUGHT!, the intro title -- never body text).
+	DisplayFont = uiFont("Creepster", Enum.Font.GothamBlack), -- horror display: scares + the intro title
+	HeadingFont = uiFont("BuilderSansExtraBold", Enum.Font.GothamBlack), -- panel titles / big numbers
+	SubheadingFont = uiFont("BuilderSansBold", Enum.Font.GothamBold), -- labels / buttons
+	BodyFont = uiFont("BuilderSansMedium", Enum.Font.GothamMedium), -- body / secondary text
+
+	-- Palette (cool, desaturated, horror). Controllers read these instead of hardcoding RGB so
+	-- the HUD can be re-themed in one place.
+	TextColor = Color3.fromRGB(232, 234, 240), -- primary text (near-white, faint cool cast)
+	MutedTextColor = Color3.fromRGB(150, 156, 168), -- secondary / captions
+	AccentColor = Color3.fromRGB(120, 220, 255), -- the cold "interactive / info" cyan (battery, links)
+	DangerColor = Color3.fromRGB(224, 64, 58), -- threat / locked / bleedout
+	SafeColor = Color3.fromRGB(120, 230, 140), -- safe / success / escaped
+	WarnColor = Color3.fromRGB(238, 196, 92), -- caution / stamina-low / coins / keys
+
+	-- Panels. A subtle vertical gradient + cool hairline stroke gives flat frames depth (no
+	-- assets -- gradient + stroke only, which render dependably on every device).
+	PanelColor = Color3.fromRGB(18, 20, 26), -- base panel fill (the gradient darkens from this)
+	PanelGradientDarken = 0.45, -- the gradient's bottom is this fraction darker than the top
+	PanelTransparency = 0.08, -- panels are nearly opaque (readable over the dark maze)
+	PanelCornerRadius = 10, -- px corner radius for panels
+	ChipCornerRadius = 6, -- px corner radius for small chips / bars / buttons
+
+	StrokeColor = Color3.fromRGB(70, 78, 92), -- the cool hairline around panels/chips
+	StrokeTransparency = 0.35,
+	StrokeThickness = 1.5,
+
+	-- Text stroke (standardized so text weight reads consistently across every controller).
+	TextStrokeColor = Color3.fromRGB(0, 0, 0),
+	TextStrokeTransparency = 0.4,
+})
+
+-- Ambient atmosphere FX (the mood the maze was missing) ---------------------------
+-- Fine dust drifting in the air, emitted in a volume that follows the camera so it always
+-- surrounds the player and -- crucially -- CATCHES THE FLASHLIGHT BEAM (LightInfluence on), the
+-- single biggest "this place is real" tell in a dark corridor. Render-only, client-side, zero
+-- gameplay effect (the FlickerController-class cosmetic CLAUDE.md permits).
+Config.AtmosphereFX = table.freeze({
+	Enabled = true,
+	DustTexture = "rbxasset://textures/particles/smoke_main.dds", -- a soft built-in puff (no upload)
+	DustColor = Color3.fromRGB(150, 156, 170), -- cool grey, matched to the Atmosphere haze
+	VolumeSize = 30, -- studs: the cube around the camera that dust spawns within
+	Rate = 16, -- particles/second
+	LifetimeMin = 5, -- seconds a mote lives (min)...
+	LifetimeMax = 9, -- ...and max
+	SizeMin = 0.18, -- studs (tiny motes)
+	SizeMax = 0.5,
+	TransparencyMin = 0.55, -- faint...
+	TransparencyMax = 0.85, -- ...to nearly invisible (only the flashlight really reveals them)
+	Speed = 0.6, -- studs/s of slow drift
+	DriftRise = 0.12, -- studs/s^2 faint upward acceleration (warm air rising)
+	SpinDeg = 35, -- deg/s lazy mote spin
+	LightInfluence = 1, -- fully lit by nearby lights -> motes glow only in the beam
+	LightEmission = 0.1, -- a hair of self-emission so they're not pure black in shadow
+})
+
+-- Monster presence FX (make the creatures feel PHYSICAL, not ghostly) -------------
+-- Client cosmetics on each rig: dust kicked up under the feet while it moves (scaled by its
+-- replicated ground speed) and a faint breath fog from its head -- so a creature glimpsed in the
+-- dark reads as a living, breathing, ground-disturbing thing. Render-only, off replicated
+-- position/state only (exploit-safe; the MonsterAnimController cosmetic class).
+Config.MonsterFX = table.freeze({
+	Enabled = true,
+	-- Footfall dust under a moving rig.
+	DustTexture = "rbxasset://textures/particles/smoke_main.dds",
+	DustColor = Color3.fromRGB(120, 120, 128),
+	DustMoveSpeed = 4, -- studs/s of rig motion above which dust starts to kick up
+	DustFullSpeed = 16, -- studs/s the dust rate maxes at
+	DustMaxRate = 11, -- particles/s at/above full speed
+	DustSize = 1.2, -- studs
+	DustLifetime = 0.9, -- seconds
+	DustRise = 1.6, -- studs/s the dust puffs upward as it fades
+	-- Breath fog drifting from the head (always faintly on -- the thing is alive).
+	BreathTexture = "rbxasset://textures/particles/smoke_main.dds",
+	BreathColor = Color3.fromRGB(182, 186, 198),
+	BreathRate = 3, -- puffs/second
+	BreathSize = 0.85, -- studs
+	BreathLifetime = 1.5, -- seconds
+	BreathSpeed = 1.3, -- studs/s forward drift
+	BreathTransparency = 0.72,
+})
+
+-- Camera shake (the threat you FEEL) ---------------------------------------------
+-- A subtle continuous tremble scaled by the nearest hunting monster's proximity (the same
+-- exploit-safe threat model as Config.Chase) plus sharp one-shot impulses on discrete scares (a
+-- trap firing near you, being caught). Bound AFTER the camera update so it layers on top of
+-- whatever camera mode is active. Render-only; reads replicated state + cue remotes only. Kept
+-- deliberately small -- enough to feel, never enough to nauseate or hurt navigation.
+Config.CameraShake = table.freeze({
+	Enabled = true,
+	ThreatStartDistance = 38, -- studs: a hunting monster begins adding tremble
+	ThreatMaxDistance = 8, -- studs: full continuous tremble
+	AlertScale = 0.4, -- tremble multiplier when a monster is only Alert (heard you)
+	FadeRate = 4, -- per-second lerp toward the target tremble level (smooth in AND out)
+	MaxOffset = 0.16, -- studs of positional sway at full threat
+	MaxTilt = 0.9, -- degrees of rotational sway at full threat
+	Frequency = 9, -- Hz the continuous tremble oscillates at
+
+	-- One-shot impulses (decay quickly). Magnitude scales the same offset/tilt units.
+	TrapImpulse = 0.9, -- a trap FIRING near the player (TrapTriggered "fire")
+	TrapImpulseRadius = 40, -- studs: the impulse falls off to 0 across this distance
+	CaughtImpulse = 2.2, -- being grabbed (MonsterCaught)
+	ImpulseDecay = 7, -- per-second exponential decay of an active impulse
+	ImpulseFrequency = 22, -- Hz the impulse rattles at (snappier than the ambient tremble)
 })
 
 return table.freeze(Config)

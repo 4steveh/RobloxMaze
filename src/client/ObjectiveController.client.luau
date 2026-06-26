@@ -35,10 +35,10 @@ tracker.AnchorPoint = Vector2.new(0.5, 0)
 tracker.Position = UDim2.new(0.5, 0, 0, HUD.PipTopOffset + HUD.PipSize + 8)
 tracker.Size = UDim2.fromOffset(360, 22)
 tracker.BackgroundTransparency = 1
-tracker.Font = Enum.Font.GothamMedium
+tracker.Font = Config.UI.SubheadingFont
 tracker.TextSize = 18
-tracker.TextColor3 = Color3.fromRGB(225, 220, 210)
-tracker.TextStrokeTransparency = 0.5
+tracker.TextColor3 = Config.UI.TextColor
+tracker.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 tracker.Text = ""
 tracker.Parent = gui
 
@@ -48,7 +48,7 @@ local function refreshTracker(count)
 		tracker.TextColor3 = Config.HUD.ArrowColor
 	else
 		tracker.Text = string.format("%s %d/%d", O.ObjectiveLabel, count, required)
-		tracker.TextColor3 = Color3.fromRGB(225, 220, 210)
+		tracker.TextColor3 = Config.UI.TextColor
 	end
 end
 refreshTracker(player:GetAttribute(Attributes.KeyCount) or 0)
@@ -69,10 +69,10 @@ title.AnchorPoint = Vector2.new(0.5, 0.5)
 title.Position = UDim2.fromScale(0.5, 0.4)
 title.Size = UDim2.fromOffset(620, 70)
 title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
+title.Font = Config.UI.DisplayFont
 title.TextSize = 52
-title.TextColor3 = Color3.fromRGB(235, 228, 215)
-title.TextStrokeTransparency = 0.4
+title.TextColor3 = Config.UI.TextColor
+title.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 title.Text = string.format("%s %d %s", O.IntroVerb, required, O.IntroNoun)
 title.Parent = gui
 
@@ -82,12 +82,50 @@ subtitle.AnchorPoint = Vector2.new(0.5, 0)
 subtitle.Position = UDim2.fromScale(0.5, 0.4)
 subtitle.Size = UDim2.fromOffset(620, 30)
 subtitle.BackgroundTransparency = 1
-subtitle.Font = Enum.Font.Gotham
+subtitle.Font = Config.UI.BodyFont
 subtitle.TextSize = 22
-subtitle.TextColor3 = Color3.fromRGB(190, 185, 178)
-subtitle.TextStrokeTransparency = 0.5
+subtitle.TextColor3 = Config.UI.MutedTextColor
+subtitle.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 subtitle.Text = O.IntroSub
 subtitle.Parent = gui
+
+-- Threat legend (intro): a colour->counter key for the two hunters, shown under the banner so a
+-- new player learns what they're up against BEFORE the first encounter. The colours mirror the
+-- radar blips + eye-glow tells, so legend / radar / glowing eyes all teach one colour language.
+local legend = Instance.new("Frame")
+legend.Name = "ThreatLegend"
+legend.AnchorPoint = Vector2.new(0.5, 0)
+legend.Position = UDim2.fromScale(0.5, 0.52)
+legend.Size = UDim2.fromOffset(620, 96)
+legend.BackgroundTransparency = 1
+legend.Parent = gui
+
+local legendLayout = Instance.new("UIListLayout")
+legendLayout.FillDirection = Enum.FillDirection.Vertical
+legendLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+legendLayout.Padding = UDim.new(0, 6)
+legendLayout.Parent = legend
+
+local function legendLine(text, color, order, size, font)
+	local lbl = Instance.new("TextLabel")
+	lbl.LayoutOrder = order
+	lbl.Size = UDim2.fromOffset(620, size + 6)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = font
+	lbl.TextSize = size
+	lbl.TextColor3 = color
+	lbl.TextStrokeColor3 = Config.UI.TextStrokeColor
+	lbl.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+	lbl.Text = text
+	lbl.Parent = legend
+	return lbl
+end
+
+local legendLines = {
+	legendLine(O.LegendTitle, Config.UI.MutedTextColor, 1, 16, Config.UI.SubheadingFont),
+	legendLine(O.LegendBunnyText, O.LegendBunnyColor, 2, 19, Config.UI.BodyFont),
+	legendLine(O.LegendMonkeyText, O.LegendMonkeyColor, 3, 19, Config.UI.BodyFont),
+}
 
 -- Controls hint (bottom-center, fades after a timer or first move) ------------------
 local controls = Instance.new("TextLabel")
@@ -97,13 +135,18 @@ controls.Position = UDim2.new(0.5, 0, 1, -70)
 controls.Size = UDim2.fromOffset(520, 26)
 controls.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 controls.BackgroundTransparency = 0.5
-controls.Font = Enum.Font.GothamMedium
+controls.Font = Config.UI.BodyFont
 controls.TextSize = 17
-controls.TextColor3 = Color3.fromRGB(220, 215, 205)
+controls.TextColor3 = Config.UI.TextColor
 controls.Text = O.ControlsHint
 local controlsCorner = Instance.new("UICorner")
 controlsCorner.CornerRadius = UDim.new(0, 6)
 controlsCorner.Parent = controls
+local controlsStroke = Instance.new("UIStroke")
+controlsStroke.Color = Config.UI.StrokeColor
+controlsStroke.Transparency = Config.UI.StrokeTransparency
+controlsStroke.Thickness = Config.UI.StrokeThickness
+controlsStroke.Parent = controls
 controls.Parent = gui
 
 local function fadeOut(label, duration)
@@ -116,6 +159,13 @@ end
 task.delay(O.IntroBannerSeconds, function()
 	fadeOut(title, 1)
 	fadeOut(subtitle, 1)
+end)
+
+-- The legend holds a little longer (it's denser to read), then fades on its own.
+task.delay(O.LegendSeconds, function()
+	for _, line in legendLines do
+		fadeOut(line, 1)
+	end
 end)
 
 -- Fade the controls hint after its timer OR the first movement key, whichever first.

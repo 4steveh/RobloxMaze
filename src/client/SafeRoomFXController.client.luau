@@ -69,11 +69,11 @@ toast.AnchorPoint = Vector2.new(0.5, 0.5)
 toast.Position = UDim2.fromScale(0.5, SR.ToastYScale)
 toast.Size = UDim2.fromOffset(280, 40)
 toast.BackgroundTransparency = 1
-toast.Font = Enum.Font.GothamBold
+toast.Font = Config.UI.SubheadingFont
 toast.TextSize = 28
 toast.Text = SR.ToastText
 toast.TextColor3 = SR.ToastColor
-toast.TextStrokeTransparency = 0.5
+toast.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 toast.TextTransparency = 1
 toast.Parent = gui
 
@@ -82,7 +82,7 @@ local function showSafeToast()
 	toastToken += 1
 	local mine = toastToken
 	toast.TextTransparency = 0
-	toast.TextStrokeTransparency = 0.5
+	toast.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 	task.delay(SR.ToastSeconds, function()
 		if mine == toastToken then
 			TweenService:Create(toast, TweenInfo.new(0.5), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()

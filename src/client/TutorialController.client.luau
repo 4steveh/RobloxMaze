@@ -37,14 +37,15 @@ tip.Position = UDim2.fromScale(0.5, 0.82)
 tip.Size = UDim2.fromOffset(620, 34)
 tip.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 tip.BackgroundTransparency = 1
-tip.Font = Enum.Font.GothamBold
+tip.Font = Config.UI.SubheadingFont
 tip.TextSize = 20
-tip.TextColor3 = Color3.fromRGB(245, 235, 220)
+tip.TextColor3 = Config.UI.TextColor
+tip.TextStrokeColor3 = Config.UI.TextStrokeColor
 tip.TextStrokeTransparency = 1
 tip.TextTransparency = 1
 tip.Text = ""
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 6)
+corner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 corner.Parent = tip
 tip.Parent = gui
 
@@ -54,7 +55,7 @@ local function showTip(text)
 	local mine = token
 	tip.Text = text
 	tip.TextTransparency = 0
-	tip.TextStrokeTransparency = 0.4
+	tip.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 	tip.BackgroundTransparency = 0.45
 	task.delay(O.TipSeconds, function()
 		if mine == token then

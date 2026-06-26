@@ -46,6 +46,11 @@ dishStroke.Color = R.RingColor
 dishStroke.Thickness = 2
 dishStroke.Transparency = 0.2
 dishStroke.Parent = dish
+local dishGrad = Instance.new("UIGradient")
+dishGrad.Color =
+	ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1):Lerp(Color3.new(0, 0, 0), Config.UI.PanelGradientDarken))
+dishGrad.Rotation = 90
+dishGrad.Parent = dish
 
 -- Center "you" dot.
 local center = Instance.new("Frame")
@@ -78,7 +83,7 @@ label.AnchorPoint = Vector2.new(1, 1)
 label.Position = UDim2.new(1, -R.Margin, 0, R.Margin)
 label.Size = UDim2.fromOffset(R.Size, 14)
 label.BackgroundTransparency = 1
-label.Font = Enum.Font.GothamMedium
+label.Font = Config.UI.SubheadingFont
 label.TextSize = 12
 label.TextColor3 = R.RingColor
 label.Text = R.Label

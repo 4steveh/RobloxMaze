@@ -12,6 +12,7 @@ export type RoundSummary = {
 	keys: number, -- keys the team held at round end (this player's KeyCount)
 	escaped: boolean, -- did this player reach the exit?
 	survivalSeconds: number, -- seconds this player was alive/active this round
+	coopEscapers: number?, -- how many players escaped this round (for the co-op-win bonus); nil/0 = solo escape
 }
 
 local Progression = {}
@@ -22,6 +23,11 @@ function Progression.computeAward(summary: RoundSummary): number
 	award += math.max(0, summary.keys) * E.KeyReward
 	if summary.escaped then
 		award += E.EscapeBonus
+		-- Escaping TOGETHER (2+ players out the same round) earns each escapee a small extra -- a
+		-- reward for cooperating, sublinear so it never out-values the base escape or punishes solo.
+		if (summary.coopEscapers or 0) >= 2 then
+			award += E.CoopEscapeBonus
+		end
 	end
 	award += math.min(math.max(0, summary.survivalSeconds), E.SurvivalCap) * E.SurvivalPerSecond
 	return math.floor(award)

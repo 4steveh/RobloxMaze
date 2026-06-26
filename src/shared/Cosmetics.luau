@@ -39,6 +39,30 @@ Cosmetics.List = {
 		payload = Color3.fromRGB(180, 130, 255),
 	},
 	{ id = "flc_ice", name = "Ice", kind = "FlashlightColor", cost = 200, payload = Color3.fromRGB(150, 220, 255) },
+	-- Expanded catalog (cosmetic-only beam tints; the shop ScrollingFrame auto-grows). Costs tier up
+	-- so coins earned over many runs keep unlocking new looks -- the retention carrot, never pay-to-win.
+	{ id = "flc_ember", name = "Ember", kind = "FlashlightColor", cost = 80, payload = Color3.fromRGB(255, 138, 60) },
+	{ id = "flc_sodium", name = "Sodium", kind = "FlashlightColor", cost = 80, payload = Color3.fromRGB(255, 174, 96) },
+	{ id = "flc_rose", name = "Rose", kind = "FlashlightColor", cost = 150, payload = Color3.fromRGB(255, 150, 192) },
+	{ id = "flc_cyan", name = "Cyan", kind = "FlashlightColor", cost = 150, payload = Color3.fromRGB(120, 252, 238) },
+	{ id = "flc_lime", name = "Lime", kind = "FlashlightColor", cost = 150, payload = Color3.fromRGB(192, 255, 110) },
+	{ id = "flc_gold", name = "Gold", kind = "FlashlightColor", cost = 250, payload = Color3.fromRGB(255, 214, 110) },
+	{
+		id = "flc_spectre",
+		name = "Spectre",
+		kind = "FlashlightColor",
+		cost = 250,
+		payload = Color3.fromRGB(198, 220, 255),
+	},
+	{ id = "flc_void", name = "Void", kind = "FlashlightColor", cost = 350, payload = Color3.fromRGB(126, 84, 206) },
+	{
+		id = "flc_infrared",
+		name = "Infrared",
+		kind = "FlashlightColor",
+		cost = 350,
+		payload = Color3.fromRGB(255, 38, 38),
+	},
+	{ id = "flc_bone", name = "Bone", kind = "FlashlightColor", cost = 500, payload = Color3.fromRGB(236, 228, 208) },
 }
 
 -- The cost-0 starters every profile owns + the default equipped item, by kind.

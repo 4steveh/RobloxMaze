@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local Cosmetics = require(ReplicatedStorage.Cosmetics)
+local Config = require(ReplicatedStorage.Config)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -37,15 +38,20 @@ local openBtn = Instance.new("TextButton")
 openBtn.Name = "OpenShop"
 openBtn.Position = UDim2.fromOffset(14, 70)
 openBtn.Size = UDim2.fromOffset(140, 34)
-openBtn.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+openBtn.BackgroundColor3 = Config.UI.PanelColor
 openBtn.BackgroundTransparency = 0.25
-openBtn.Font = Enum.Font.GothamBold
+openBtn.Font = Config.UI.SubheadingFont
 openBtn.TextSize = 16
-openBtn.TextColor3 = Color3.fromRGB(240, 205, 70)
+openBtn.TextColor3 = Config.UI.WarnColor
 openBtn.Text = "SHOP  0"
 local obCorner = Instance.new("UICorner")
-obCorner.CornerRadius = UDim.new(0, 8)
+obCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 obCorner.Parent = openBtn
+local obStroke = Instance.new("UIStroke")
+obStroke.Color = Config.UI.StrokeColor
+obStroke.Transparency = Config.UI.StrokeTransparency
+obStroke.Thickness = Config.UI.StrokeThickness
+obStroke.Parent = openBtn
 openBtn.Parent = gui
 
 -- Panel (centered, hidden by default).
@@ -53,15 +59,21 @@ local panel = Instance.new("Frame")
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
 panel.Position = UDim2.fromScale(0.5, 0.5)
 panel.Size = UDim2.fromOffset(420, 420)
-panel.BackgroundColor3 = Color3.fromRGB(14, 16, 20)
+panel.BackgroundColor3 = Config.UI.PanelColor
 panel.BackgroundTransparency = 0.05
 panel.Visible = false
 local pCorner = Instance.new("UICorner")
-pCorner.CornerRadius = UDim.new(0, 12)
+pCorner.CornerRadius = UDim.new(0, Config.UI.PanelCornerRadius)
 pCorner.Parent = panel
+local pGradient = Instance.new("UIGradient")
+pGradient.Color =
+	ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1):Lerp(Color3.new(0, 0, 0), Config.UI.PanelGradientDarken))
+pGradient.Rotation = 90
+pGradient.Parent = panel
 local pStroke = Instance.new("UIStroke")
-pStroke.Color = Color3.fromRGB(70, 80, 95)
-pStroke.Thickness = 2
+pStroke.Color = Config.UI.StrokeColor
+pStroke.Transparency = Config.UI.StrokeTransparency
+pStroke.Thickness = Config.UI.StrokeThickness
 pStroke.Parent = panel
 panel.Parent = gui
 
@@ -69,10 +81,10 @@ local header = Instance.new("TextLabel")
 header.Position = UDim2.fromOffset(18, 12)
 header.Size = UDim2.fromOffset(300, 28)
 header.BackgroundTransparency = 1
-header.Font = Enum.Font.GothamBold
+header.Font = Config.UI.HeadingFont
 header.TextXAlignment = Enum.TextXAlignment.Left
 header.TextSize = 22
-header.TextColor3 = Color3.fromRGB(235, 230, 220)
+header.TextColor3 = Config.UI.TextColor
 header.Text = "FLASHLIGHT SHOP"
 header.Parent = panel
 
@@ -81,10 +93,10 @@ balance.AnchorPoint = Vector2.new(1, 0)
 balance.Position = UDim2.new(1, -52, 0, 14)
 balance.Size = UDim2.fromOffset(120, 24)
 balance.BackgroundTransparency = 1
-balance.Font = Enum.Font.GothamBold
+balance.Font = Config.UI.HeadingFont
 balance.TextXAlignment = Enum.TextXAlignment.Right
 balance.TextSize = 18
-balance.TextColor3 = Color3.fromRGB(240, 205, 70)
+balance.TextColor3 = Config.UI.WarnColor
 balance.Text = "0"
 balance.Parent = panel
 
@@ -92,14 +104,19 @@ local closeBtn = Instance.new("TextButton")
 closeBtn.AnchorPoint = Vector2.new(1, 0)
 closeBtn.Position = UDim2.new(1, -14, 0, 12)
 closeBtn.Size = UDim2.fromOffset(28, 28)
-closeBtn.BackgroundColor3 = Color3.fromRGB(40, 44, 52)
-closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BackgroundColor3 = Config.UI.PanelColor
+closeBtn.Font = Config.UI.SubheadingFont
 closeBtn.TextSize = 18
-closeBtn.TextColor3 = Color3.fromRGB(235, 230, 220)
+closeBtn.TextColor3 = Config.UI.TextColor
 closeBtn.Text = "X"
 local cbCorner = Instance.new("UICorner")
-cbCorner.CornerRadius = UDim.new(0, 6)
+cbCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 cbCorner.Parent = closeBtn
+local cbStroke = Instance.new("UIStroke")
+cbStroke.Color = Config.UI.StrokeColor
+cbStroke.Transparency = Config.UI.StrokeTransparency
+cbStroke.Thickness = Config.UI.StrokeThickness
+cbStroke.Parent = closeBtn
 closeBtn.Parent = panel
 
 local list = Instance.new("ScrollingFrame")
@@ -121,11 +138,16 @@ local rows = {}
 for i, c in Cosmetics.List do
 	local row = Instance.new("Frame")
 	row.Size = UDim2.new(1, -6, 0, 52)
-	row.BackgroundColor3 = Color3.fromRGB(22, 25, 31)
+	row.BackgroundColor3 = Config.UI.PanelColor
 	row.LayoutOrder = i
 	local rCorner = Instance.new("UICorner")
-	rCorner.CornerRadius = UDim.new(0, 8)
+	rCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 	rCorner.Parent = row
+	local rStroke = Instance.new("UIStroke")
+	rStroke.Color = Config.UI.StrokeColor
+	rStroke.Transparency = Config.UI.StrokeTransparency
+	rStroke.Thickness = Config.UI.StrokeThickness
+	rStroke.Parent = row
 
 	local swatch = Instance.new("Frame")
 	swatch.AnchorPoint = Vector2.new(0, 0.5)
@@ -141,10 +163,10 @@ for i, c in Cosmetics.List do
 	name.Position = UDim2.fromOffset(52, 8)
 	name.Size = UDim2.fromOffset(180, 20)
 	name.BackgroundTransparency = 1
-	name.Font = Enum.Font.GothamMedium
+	name.Font = Config.UI.SubheadingFont
 	name.TextXAlignment = Enum.TextXAlignment.Left
 	name.TextSize = 16
-	name.TextColor3 = Color3.fromRGB(235, 230, 220)
+	name.TextColor3 = Config.UI.TextColor
 	name.Text = c.name
 	name.Parent = row
 
@@ -152,10 +174,10 @@ for i, c in Cosmetics.List do
 	cost.Position = UDim2.fromOffset(52, 28)
 	cost.Size = UDim2.fromOffset(180, 16)
 	cost.BackgroundTransparency = 1
-	cost.Font = Enum.Font.Gotham
+	cost.Font = Config.UI.BodyFont
 	cost.TextXAlignment = Enum.TextXAlignment.Left
 	cost.TextSize = 13
-	cost.TextColor3 = Color3.fromRGB(170, 175, 185)
+	cost.TextColor3 = Config.UI.MutedTextColor
 	cost.Text = if c.cost == 0 then "Free" else (c.cost .. " coins")
 	cost.Parent = row
 
@@ -163,12 +185,17 @@ for i, c in Cosmetics.List do
 	action.AnchorPoint = Vector2.new(1, 0.5)
 	action.Position = UDim2.new(1, -12, 0.5, 0)
 	action.Size = UDim2.fromOffset(96, 32)
-	action.Font = Enum.Font.GothamBold
+	action.Font = Config.UI.SubheadingFont
 	action.TextSize = 14
 	action.TextColor3 = Color3.fromRGB(20, 22, 26)
 	local aCorner = Instance.new("UICorner")
-	aCorner.CornerRadius = UDim.new(0, 6)
+	aCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 	aCorner.Parent = action
+	local aStroke = Instance.new("UIStroke")
+	aStroke.Color = Config.UI.StrokeColor
+	aStroke.Transparency = Config.UI.StrokeTransparency
+	aStroke.Thickness = Config.UI.StrokeThickness
+	aStroke.Parent = action
 	action.Parent = row
 
 	action.Activated:Connect(function()
@@ -195,15 +222,15 @@ local function refresh()
 		local a = rows[c.id].action
 		if equipped[c.kind] == c.id then
 			a.Text = "EQUIPPED"
-			a.BackgroundColor3 = Color3.fromRGB(90, 110, 95)
+			a.BackgroundColor3 = Config.UI.SafeColor
 			a.AutoButtonColor = false
 		elseif owned[c.id] then
 			a.Text = "EQUIP"
-			a.BackgroundColor3 = Color3.fromRGB(120, 200, 140)
+			a.BackgroundColor3 = Config.UI.AccentColor
 			a.AutoButtonColor = true
 		else
 			a.Text = "BUY"
-			a.BackgroundColor3 = Color3.fromRGB(240, 205, 70)
+			a.BackgroundColor3 = Config.UI.WarnColor
 			a.AutoButtonColor = true
 		end
 	end

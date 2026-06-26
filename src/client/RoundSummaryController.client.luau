@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Remotes)
+local Config = require(ReplicatedStorage.Config)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -24,15 +25,20 @@ local panel = Instance.new("Frame")
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
 panel.Position = UDim2.fromScale(0.5, 0.32)
 panel.Size = UDim2.fromOffset(360, 150)
-panel.BackgroundColor3 = Color3.fromRGB(12, 14, 18)
+panel.BackgroundColor3 = Config.UI.PanelColor
 panel.BackgroundTransparency = 1
 panel.Visible = false
 local panelCorner = Instance.new("UICorner")
-panelCorner.CornerRadius = UDim.new(0, 10)
+panelCorner.CornerRadius = UDim.new(0, Config.UI.PanelCornerRadius)
 panelCorner.Parent = panel
+local panelGradient = Instance.new("UIGradient")
+panelGradient.Color =
+	ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1):Lerp(Color3.new(0, 0, 0), Config.UI.PanelGradientDarken))
+panelGradient.Rotation = 90
+panelGradient.Parent = panel
 local panelStroke = Instance.new("UIStroke")
-panelStroke.Color = Color3.fromRGB(70, 80, 95)
-panelStroke.Thickness = 2
+panelStroke.Color = Config.UI.StrokeColor
+panelStroke.Thickness = Config.UI.StrokeThickness
 panelStroke.Transparency = 1
 panelStroke.Parent = panel
 panel.Parent = gui
@@ -42,7 +48,7 @@ title.AnchorPoint = Vector2.new(0.5, 0)
 title.Position = UDim2.new(0.5, 0, 0, 14)
 title.Size = UDim2.fromOffset(340, 32)
 title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
+title.Font = Config.UI.HeadingFont
 title.TextSize = 26
 title.TextTransparency = 1
 title.Parent = panel
@@ -52,9 +58,9 @@ coins.AnchorPoint = Vector2.new(0.5, 0)
 coins.Position = UDim2.new(0.5, 0, 0, 52)
 coins.Size = UDim2.fromOffset(340, 40)
 coins.BackgroundTransparency = 1
-coins.Font = Enum.Font.GothamBlack
+coins.Font = Config.UI.HeadingFont
 coins.TextSize = 36
-coins.TextColor3 = Color3.fromRGB(240, 205, 70)
+coins.TextColor3 = Config.UI.WarnColor
 coins.TextTransparency = 1
 coins.Parent = panel
 
@@ -63,9 +69,9 @@ breakdown.AnchorPoint = Vector2.new(0.5, 0)
 breakdown.Position = UDim2.new(0.5, 0, 0, 98)
 breakdown.Size = UDim2.fromOffset(340, 20)
 breakdown.BackgroundTransparency = 1
-breakdown.Font = Enum.Font.GothamMedium
+breakdown.Font = Config.UI.BodyFont
 breakdown.TextSize = 15
-breakdown.TextColor3 = Color3.fromRGB(200, 200, 210)
+breakdown.TextColor3 = Config.UI.MutedTextColor
 breakdown.TextTransparency = 1
 breakdown.Parent = panel
 
@@ -74,9 +80,9 @@ total.AnchorPoint = Vector2.new(0.5, 0)
 total.Position = UDim2.new(0.5, 0, 0, 120)
 total.Size = UDim2.fromOffset(340, 20)
 total.BackgroundTransparency = 1
-total.Font = Enum.Font.GothamMedium
+total.Font = Config.UI.BodyFont
 total.TextSize = 15
-total.TextColor3 = Color3.fromRGB(170, 175, 185)
+total.TextColor3 = Config.UI.MutedTextColor
 total.TextTransparency = 1
 total.Parent = panel
 
@@ -93,7 +99,7 @@ Remotes.get(Remotes.Names.RoundSummary).OnClientEvent:Connect(function(data)
 	local mine = token
 
 	title.Text = if data.escaped then "ESCAPED!" else "ROUND OVER"
-	title.TextColor3 = if data.escaped then Color3.fromRGB(120, 230, 130) else Color3.fromRGB(225, 220, 210)
+	title.TextColor3 = if data.escaped then Config.UI.SafeColor else Config.UI.TextColor
 	coins.Text = string.format("+%d", data.coinsGained or 0)
 	breakdown.Text = string.format("%d keys  ·  %s", data.keys or 0, if data.escaped then "escaped" else "caught")
 	total.Text = string.format("Total: %d coins", data.total or 0)

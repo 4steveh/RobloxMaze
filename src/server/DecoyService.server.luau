@@ -13,6 +13,7 @@
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -77,9 +78,9 @@ local function landingPoint(player: Player): Vector3?
 	local restXZ = origin + up + flat * dist
 	local downHit = Workspace:Raycast(restXZ, Vector3.new(0, -40, 0), params)
 	if downHit then
-		return downHit.Position + Vector3.new(0, 0.6, 0)
+		return downHit.Position + Vector3.new(0, C.LandingHeight, 0)
 	end
-	return origin + flat * dist + Vector3.new(0, 0.6, 0)
+	return origin + flat * dist + Vector3.new(0, C.LandingHeight, 0)
 end
 
 local function spawnDecoy(position: Vector3)
@@ -113,12 +114,43 @@ local function spawnDecoy(position: Vector3)
 	sound.Parent = part
 	sound:Play()
 
+	-- Spin the anchored part while it lives so it reads as ALIVE (a rattling, tumbling lure) rather
+	-- than an inert ball sitting on the floor. Render-only cosmetic -- it decides nothing, and the
+	-- part stays CanCollide/CanQuery/CanTouch off so the rotation never touches physics/queries. The
+	-- loop self-terminates the instant the part is destroyed (LifeSeconds below), via the .Parent guard.
+	task.spawn(function()
+		while part.Parent do
+			local dt = RunService.Heartbeat:Wait()
+			-- Re-check after the yield: the despawn could have fired while we waited.
+			if not part.Parent then
+				break
+			end
+			part.CFrame = part.CFrame * CFrame.Angles(0, C.SpinSpeed * dt, 0)
+		end
+	end)
+
 	-- Pulse the world-noise event a few times so the monkey keeps homing to the spot while it
-	-- rattles (each pulse is a fresh one-shot it investigates), then despawn.
+	-- rattles (each pulse is a fresh one-shot it investigates), then despawn. Each pulse also FLASHES
+	-- the light bright (a visible "rattle") then eases it back toward its base over the interval, so the
+	-- decoy visibly throbs in time with the noise it emits. Light tween is cosmetic only.
 	task.spawn(function()
 		for _ = 1, C.NoisePulses do
 			noiseSignal:Fire(position)
-			task.wait(C.PulseInterval)
+			-- Flash high at the pulse, then step the brightness back down toward the base across the
+			-- interval so the next pulse flashes from rest -- a simple per-Heartbeat lerp (no Tween
+			-- instance to clean up), guarded so it stops the moment the part despawns.
+			light.Brightness = C.LightBrightness * C.PulseBrightnessScale
+			local elapsed = 0
+			while elapsed < C.PulseInterval do
+				if not part.Parent then
+					return
+				end
+				local dt = RunService.Heartbeat:Wait()
+				elapsed += dt
+				local alpha = math.clamp(elapsed / C.PulseInterval, 0, 1)
+				light.Brightness = C.LightBrightness * C.PulseBrightnessScale
+					+ (C.LightBrightness - C.LightBrightness * C.PulseBrightnessScale) * alpha
+			end
 		end
 	end)
 	task.delay(C.LifeSeconds, function()

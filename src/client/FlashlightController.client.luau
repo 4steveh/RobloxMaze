@@ -31,6 +31,7 @@ local lightOn = true -- starts on
 local inSafeRoom = false -- driven ONLY by server remotes, never by local detection
 local light = nil -- the current SpotLight (rebuilt each character)
 local emitter = nil -- invisible part the SpotLight rides; aimed at the camera each frame
+local beam = nil -- the volumetric shaft Beam riding the emitter (nil when Config.Flashlight.Beam.Enabled is false)
 local flickerPhase = 0
 
 -- Publish the on/off state so PlayerSFXController can play the toggle click (local).
@@ -98,6 +99,42 @@ local function ensureLight(character)
 	spot.Shadows = Config.Flashlight.Shadows -- monsters throw a shadow before you see them (Future tech on)
 	spot.Face = Enum.NormalId.Front -- beam along the emitter's LookVector, which we aim at the camera
 	spot.Parent = part
+
+	-- Volumetric shaft: a faint cone of light riding the emitter so a sweep of the flashlight
+	-- reads as a physical beam cutting the dark (decides nothing -- render-only cosmetic). The
+	-- emitter's Front face (= +LookVector) is where the light points, which for a Part is its -Z;
+	-- so the near attachment sits at the lens and the far one at (0,0,-Length) down that -Z forward.
+	if Config.Flashlight.Beam.Enabled then
+		local B = Config.Flashlight.Beam
+		local near = Instance.new("Attachment")
+		near.Name = "FlashlightBeamNear"
+		near.CFrame = CFrame.new() -- at the lens (emitter origin)
+		near.Parent = part
+		local far = Instance.new("Attachment")
+		far.Name = "FlashlightBeamFar"
+		far.CFrame = CFrame.new(0, 0, -B.Length) -- straight forward along the emitter's -Z (where the SpotLight points)
+		far.Parent = part
+
+		local shaft = Instance.new("Beam")
+		shaft.Name = "FlashlightBeam"
+		shaft.Attachment0 = near
+		shaft.Attachment1 = far
+		shaft.FaceCamera = true -- always present the ribbon flat to the viewer, so the shaft reads from any angle
+		shaft.Segments = 6 -- a short straight shaft needs no tessellation; keep it cheap
+		shaft.Width0 = B.WidthNear
+		shaft.Width1 = B.WidthFar -- flares to a soft cone toward the far end
+		shaft.Color = ColorSequence.new(B.Color)
+		shaft.Brightness = B.Brightness
+		shaft.LightInfluence = 0 -- self-lit glow, independent of scene lighting (it IS the light)
+		-- Faint at the lens, ramping to fully clear at the far end -- a soft fade-out, never a hard bar.
+		shaft.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, B.Transparency),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		shaft.Parent = part
+		beam = shaft
+	end
+
 	emitter = part
 	light = spot
 	applyEquippedColor()
@@ -157,6 +194,7 @@ player.CharacterAdded:Connect(onCharacterAdded)
 player.CharacterRemoving:Connect(function()
 	light = nil
 	emitter = nil
+	beam = nil -- the Beam dies with the emitter part it rides; just drop the stale reference
 	inSafeRoom = false
 end)
 
@@ -273,6 +311,11 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	if light then
 		local emitting = lightOn -- NEVER fully off: a drained battery only DIMS it (the low-battery flicker floors brightness), never darkness, so the flashlight always works
 		light.Enabled = emitting
+		-- The volumetric shaft tracks the light's on/off so it never lingers as a glowing bar
+		-- when you cut the flashlight (it rides the same emitter, so aiming is already handled).
+		if beam then
+			beam.Enabled = emitting
+		end
 		if emitting then
 			local brightness = Config.Flashlight.Brightness
 			if battery <= Config.Flashlight.LowBatteryThreshold then

@@ -40,10 +40,10 @@ title.AnchorPoint = Vector2.new(0.5, 0.5)
 title.Position = UDim2.fromScale(0.5, 0.4)
 title.Size = UDim2.fromOffset(560, 80)
 title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBlack
+title.Font = Config.UI.DisplayFont
 title.TextSize = 64
 title.TextColor3 = D.BleedoutBarColor
-title.TextStrokeTransparency = 0.3
+title.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 title.Text = D.DownedText
 title.Parent = overlay
 
@@ -52,10 +52,10 @@ subtitle.AnchorPoint = Vector2.new(0.5, 0)
 subtitle.Position = UDim2.fromScale(0.5, 0.48)
 subtitle.Size = UDim2.fromOffset(560, 28)
 subtitle.BackgroundTransparency = 1
-subtitle.Font = Enum.Font.GothamMedium
+subtitle.Font = Config.UI.BodyFont
 subtitle.TextSize = 20
-subtitle.TextColor3 = Color3.fromRGB(225, 215, 210)
-subtitle.TextStrokeTransparency = 0.5
+subtitle.TextColor3 = Config.UI.MutedTextColor
+subtitle.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 subtitle.Text = D.DownedSubText
 subtitle.Parent = overlay
 
@@ -68,8 +68,14 @@ local function makeBar(yScale, fillColor, caption)
 	back.BackgroundColor3 = Color3.fromRGB(20, 18, 20)
 	back.BackgroundTransparency = 0.2
 	local backCorner = Instance.new("UICorner")
-	backCorner.CornerRadius = UDim.new(0, 5)
+	backCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 	backCorner.Parent = back
+
+	local backStroke = Instance.new("UIStroke")
+	backStroke.Color = Config.UI.StrokeColor
+	backStroke.Transparency = Config.UI.StrokeTransparency
+	backStroke.Thickness = Config.UI.StrokeThickness
+	backStroke.Parent = back
 
 	local fill = Instance.new("Frame")
 	fill.Name = "Fill"
@@ -78,7 +84,7 @@ local function makeBar(yScale, fillColor, caption)
 	fill.Size = UDim2.fromScale(1, 1)
 	fill.BackgroundColor3 = fillColor
 	local fillCorner = Instance.new("UICorner")
-	fillCorner.CornerRadius = UDim.new(0, 5)
+	fillCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
 	fillCorner.Parent = fill
 	fill.Parent = back
 
@@ -87,7 +93,7 @@ local function makeBar(yScale, fillColor, caption)
 	label.Position = UDim2.new(0.5, 0, 0, -2)
 	label.Size = UDim2.fromOffset(D.BarWidth, 16)
 	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamMedium
+	label.Font = Config.UI.SubheadingFont
 	label.TextSize = 13
 	label.TextColor3 = fillColor
 	label.Text = caption
@@ -143,13 +149,32 @@ local function makeBeacon(other)
 
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, 0, 0, 22)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
+	label.BackgroundColor3 = Config.UI.PanelColor
+	label.BackgroundTransparency = Config.UI.PanelTransparency
+	label.Font = Config.UI.SubheadingFont
 	label.TextSize = 18
 	label.TextColor3 = D.BeaconColor
-	label.TextStrokeTransparency = 0.3
+	label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 	label.Text = D.BeaconText
 	label.Parent = bb
+
+	local labelCorner = Instance.new("UICorner")
+	labelCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
+	labelCorner.Parent = label
+
+	local labelStroke = Instance.new("UIStroke")
+	labelStroke.Color = Config.UI.StrokeColor
+	labelStroke.Transparency = Config.UI.StrokeTransparency
+	labelStroke.Thickness = Config.UI.StrokeThickness
+	labelStroke.Parent = label
+
+	local labelGrad = Instance.new("UIGradient")
+	labelGrad.Color = ColorSequence.new(
+		Color3.new(1, 1, 1),
+		Color3.new(1, 1, 1):Lerp(Color3.new(0, 0, 0), Config.UI.PanelGradientDarken)
+	)
+	labelGrad.Rotation = 90
+	labelGrad.Parent = label
 
 	local back = Instance.new("Frame")
 	back.AnchorPoint = Vector2.new(0.5, 1)
@@ -188,25 +213,43 @@ local function refreshBeacon(other)
 	end
 end
 
+-- Per-other-player connections, so a departed player's signal handlers (and the closures
+-- that retain the Player object) are disconnected on leave instead of leaking every round.
+local connections = {} -- [otherPlayer] = { RBXScriptConnection }
+
 local function watch(other)
 	if other == player then
 		return
 	end
-	other:GetAttributeChangedSignal(Attributes.Downed):Connect(function()
-		refreshBeacon(other)
-	end)
-	other.CharacterAdded:Connect(function()
-		removeBeacon(other) -- stale adornee; re-evaluate against the fresh body
-		task.defer(refreshBeacon, other)
-	end)
+	connections[other] = {
+		other:GetAttributeChangedSignal(Attributes.Downed):Connect(function()
+			refreshBeacon(other)
+		end),
+		other.CharacterAdded:Connect(function()
+			removeBeacon(other) -- stale adornee; re-evaluate against the fresh body
+			task.defer(refreshBeacon, other)
+		end),
+	}
 	refreshBeacon(other)
+end
+
+-- Disconnect this player's signals AND drop their beacon (called on leave).
+local function unwatch(other)
+	local conns = connections[other]
+	if conns then
+		for _, c in conns do
+			c:Disconnect()
+		end
+		connections[other] = nil
+	end
+	removeBeacon(other)
 end
 
 Players.PlayerAdded:Connect(watch)
 for _, other in Players:GetPlayers() do
 	watch(other)
 end
-Players.PlayerRemoving:Connect(removeBeacon)
+Players.PlayerRemoving:Connect(unwatch)
 
 RunService.RenderStepped:Connect(function()
 	for other, bb in beacons do
