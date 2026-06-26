@@ -103,10 +103,12 @@ local function ensurePad(part: BasePart)
 	pad.CanQuery = false
 	pad.CanTouch = false
 	pad.CastShadow = false
-	-- Drop the disc to just over the floor under the trap marker (its underside) and roll it flat so
-	-- the round face points straight up; a tiny epsilon lifts it off the floor to avoid z-fighting.
-	local floorY = part.Position.Y - part.Size.Y / 2 + 0.02
-	pad.CFrame = CFrame.new(part.Position.X, floorY, part.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+	-- Lay the disc flat (roll 90deg about Z so the round face points up) and rest it JUST ON the floor
+	-- under the trap: the floor surface is the marker's underside; the disc CENTRE sits half its
+	-- thickness above that (+ a tiny epsilon) so the disc BOTTOM clears the floor (no z-fighting / sink).
+	local floorY = part.Position.Y - part.Size.Y / 2
+	local centreY = floorY + C.PadThickness / 2 + 0.02
+	pad.CFrame = CFrame.new(part.Position.X, centreY, part.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
 end
 
 -- [part] = { state = "armed"|"windup"|"cooldown", windupStart?, victim?, cooldownUntil? }

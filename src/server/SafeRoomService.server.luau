@@ -34,9 +34,11 @@ local function markSafeRoom(part)
 		return -- only solid trigger volumes carry the visual; ignore folders/attachments tagged by mistake
 	end
 
-	-- Green wire outline so the room's bounds read at a glance from down a dark hall.
+	-- Green wire outline so the room's bounds read at a glance from down a dark hall. Type-guard the
+	-- find-or-create (like TrapService) so a wrongly-typed pre-existing "SafeOutline" child can't make
+	-- the property writes below throw and break idempotency.
 	local outline = part:FindFirstChild("SafeOutline")
-	if not outline then
+	if not (outline and outline:IsA("SelectionBox")) then
 		outline = Instance.new("SelectionBox")
 		outline.Name = "SafeOutline"
 		outline.Adornee = part
@@ -50,7 +52,7 @@ local function markSafeRoom(part)
 	-- Soft inviting glow so the sanctuary self-lights in the dark (kept gentle -- it must not outshine
 	-- the keys/exit, which are the objective). Shadows off: it's a wash, not a caster.
 	local glow = part:FindFirstChild("SafeGlow")
-	if not glow then
+	if not (glow and glow:IsA("PointLight")) then
 		glow = Instance.new("PointLight")
 		glow.Name = "SafeGlow"
 		glow.Shadows = false
