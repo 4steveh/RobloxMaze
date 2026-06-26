@@ -132,12 +132,12 @@ function PlayerData.serialize(player)
 	for id in p.achievements do
 		achievements[id] = true
 	end
-	-- Clone stats: serialize runs before persist's UpdateAsync (which yields), so a snapshot keeps a
-	-- concurrent recordRound from mutating the table mid-write.
+	-- Clone stats + equipped: serialize runs before persist's UpdateAsync (which yields), so a snapshot
+	-- keeps a concurrent recordRound / ShopService buy-equip from mutating the table mid-write.
 	return {
 		coins = p.coins,
 		owned = owned,
-		equipped = p.equipped,
+		equipped = table.clone(p.equipped),
 		stats = table.clone(p.stats),
 		achievements = achievements,
 	}

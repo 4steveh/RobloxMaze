@@ -34,6 +34,13 @@ local emitter = nil -- invisible part the SpotLight rides; aimed at the camera e
 local beam = nil -- the volumetric shaft Beam riding the emitter (nil when Config.Flashlight.Beam.Enabled is false)
 local flickerPhase = 0
 
+-- Personal accessibility / FX prefs (render-only, uncontested -- SettingsController writes them as
+-- LocalPlayer attributes). They shape the flicker DEPTH only: fxIntensity shallows the dip, and
+-- ReduceFlashing floors it so the beam never strobes/blacks out (a faint steady dim at most). They
+-- never touch the battery value or occupancy -- pure local cosmetic (the FlickerController exception).
+local fxIntensity = Config.Settings.DefaultFxIntensity
+local reduceFlashing = Config.Settings.DefaultReduceFlashing
+
 -- Publish the on/off state so PlayerSFXController can play the toggle click (local).
 player:SetAttribute(Attributes.FlashlightOn, lightOn)
 
@@ -180,6 +187,30 @@ local function monsterProximityFlicker()
 	return math.clamp(threat * FL.MonsterFlickerMaxScale * (0.55 * osc + 0.6 * dropout), 0, 0.95)
 end
 
+-- Keep the cached prefs live as the player adjusts the settings menu (validate the attribute type
+-- and fall back to the Config default, since a stale/absent attribute reads nil).
+local function refreshFxPrefs()
+	local intensity = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = if typeof(intensity) == "number" then intensity else Config.Settings.DefaultFxIntensity
+	local reduce = player:GetAttribute(Attributes.SettingReduceFlashing)
+	reduceFlashing = if typeof(reduce) == "boolean" then reduce else Config.Settings.DefaultReduceFlashing
+end
+refreshFxPrefs()
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshFxPrefs)
+player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshFxPrefs)
+
+-- Shape a flicker BRIGHTNESS scale (1 = full beam, lower = a deeper dip) by the player's prefs:
+-- fxIntensity scales the dip's DEPTH (0 = no flicker at all), and ReduceFlashing clamps the dip so
+-- the beam never falls below Config.Settings.ReduceFlashingFloor of base -- the light always stays
+-- usable for navigation (no strobing/blackout for photosensitive players).
+local function applyFlickerPrefs(scale)
+	local depth = (1 - scale) * fxIntensity
+	if reduceFlashing then
+		depth = math.min(depth, 1 - Config.Settings.ReduceFlashingFloor)
+	end
+	return 1 - depth
+end
+
 local function onCharacterAdded(character)
 	-- New body: forget the old safe-room belief (the server re-fires "entered" if
 	-- we spawned inside one) and rebuild the light. Battery persists across deaths.
@@ -203,15 +234,16 @@ local function setLight(on)
 	player:SetAttribute(Attributes.FlashlightOn, lightOn)
 end
 
--- Keyboard toggle (PC). createTouchButton=false: touch devices get the custom on-screen
--- button below instead of CAS's small generic auto-button.
+-- Keyboard + gamepad toggle. createTouchButton=false: touch devices get the custom on-screen
+-- button below instead of CAS's small generic auto-button. One BindAction takes BOTH input enums,
+-- so a controller player toggles the light with Config.Flashlight.GamepadToggleKey too.
 local TOGGLE_ACTION = "ToggleFlashlight"
 ContextActionService:BindAction(TOGGLE_ACTION, function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
 		setLight(not lightOn)
 	end
 	return Enum.ContextActionResult.Sink
-end, false, Config.Flashlight.ToggleKey)
+end, false, Config.Flashlight.ToggleKey, Config.Flashlight.GamepadToggleKey)
 
 -- Custom on-screen flashlight button for touch devices (iPad/iPhone) -- a clear, big, always-
 -- visible tap target (render-only; CLAUDE.md permits client cosmetic UI). Hidden on PC.
@@ -318,13 +350,18 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		end
 		if emitting then
 			local brightness = Config.Flashlight.Brightness
+			-- Accumulate every flicker into ONE brightness scale (1 = full beam) so the player's
+			-- accessibility prefs floor the TOTAL dip once -- the beam never compounds below
+			-- Config.Settings.ReduceFlashingFloor of base, however many flickers stack.
+			local flicker = 1
 			if battery <= Config.Flashlight.LowBatteryThreshold then
 				flickerPhase += deltaTime * Config.Flashlight.LowBatteryFlickerSpeed
 				local wave = 0.5 + 0.5 * math.sin(flickerPhase)
 				local scale = Config.Flashlight.LowBatteryMinBrightnessScale
-				brightness *= scale + (1 - scale) * wave
+				flicker *= scale + (1 - scale) * wave
 			end
-			brightness *= 1 - monsterProximityFlicker()
+			flicker *= 1 - monsterProximityFlicker()
+			brightness *= applyFlickerPrefs(flicker)
 			light.Brightness = brightness
 		end
 	end

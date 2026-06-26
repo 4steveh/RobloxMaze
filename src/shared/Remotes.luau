@@ -28,6 +28,12 @@ local Names = table.freeze({
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
 	AchievementUnlocked = "AchievementUnlocked", -- server -> client: a lifetime-stat milestone just earned (payload: {name, reward}) -- drives the unlock toast (StatsService)
 	ShopResult = "ShopResult", -- server -> client: result of a ShopAction (payload: {ok, op, id, reason?})
+	RoundThemeAnnounced = "RoundThemeAnnounced", -- server -> ALL clients: the new round picked a maze THEME (payload: theme index into Config.MazeThemes) -- MazeService fires it so the client can surface the theme NAME ("Entering: BOILER"); the server-side MazeThemeSelected signal stays server-only
+	AmbushTriggered = "AmbushTriggered", -- server -> ALL clients: a player passed an AmbushNode (payload: position Vector3) -- AmbushFXController plays a localized 3D skitter + brief light cut (a micro-scare between encounters)
+	AlarmStateChanged = "AlarmStateChanged", -- server -> ALL clients: the team holds every key, the exit is open (payload: active boolean) -- AlarmFXController throws a pulsing red emergency wash + alarm sting (the climax made felt); cleared on round reset
+
+	-- CLIENT -> SERVER (inbound, HOSTILE payload -- validate + rate-limit on the server).
+	HideIntent = "HideIntent", -- client -> server: NO payload (just intent). The server confirms the player is within range of a HidingSpot from its OWN known position, then ducks them in / out (HidingService); never trusts a client position
 
 	-- CLIENT -> SERVER (inbound). Payload is HOSTILE: validate type and rate-limit on the
 	-- server (see SprintService). Carries the sprint key held-state.
@@ -53,9 +59,13 @@ local REMOTE_EVENTS: { string } = {
 	Names.DataReady,
 	Names.AchievementUnlocked,
 	Names.ShopResult,
+	Names.RoundThemeAnnounced,
+	Names.AmbushTriggered,
+	Names.AlarmStateChanged,
 	Names.SprintIntent,
 	Names.ShopAction,
 	Names.ThrowDecoy,
+	Names.HideIntent,
 }
 
 local Remotes = {}

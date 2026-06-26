@@ -86,6 +86,21 @@ local Attributes = {
 	-- of the profile; FlashlightController reads it to tint the beam (cosmetic only).
 	EquippedFlashlightColor = "EquippedFlashlightColor",
 
+	-- boolean on a Player: true while HIDDEN inside a HidingSpot (server-authoritative, HidingService).
+	-- The monster's senses (sight + hearing + contact-catch) and NoiseService ALL skip a hidden player,
+	-- exactly like InSafeRoom -- but a hunting monster lingering at your spot can FLUSH you out (it's a
+	-- last resort, not god-mode). The client HideController renders the hidden overlay + the "press to
+	-- hide" prompt from it. A fresh character is never hidden.
+	Hidden = "Hidden",
+
+	-- CLIENT-LOCAL prefs on the LocalPlayer (NOT replicated, NOT server-read): set by the client
+	-- SettingsController and read by the FX/audio controllers on the SAME client. Personal, uncontested
+	-- comfort/accessibility settings (the FlickerController-class client exception) -- they shape only
+	-- the local view/audio, never a contested outcome, so they correctly live off the server.
+	SettingFxIntensity = "SettingFxIntensity", -- number 0..1: global FX strength multiplier (1 = full)
+	SettingReduceFlashing = "SettingReduceFlashing", -- boolean: floor flicker / cut screen strobes
+	SettingMasterVolume = "SettingMasterVolume", -- number 0..1: scales the AudioGroups Master bus
+
 	-- number on a Player (0..1): server-computed audible NOISE this player is making
 	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
 	-- NoiseService (never client-set), read by the monkey's hearing detection and the

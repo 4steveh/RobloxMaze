@@ -14,6 +14,7 @@ local Remotes = require(ReplicatedStorage.Remotes)
 
 local sprintIntent = Remotes.get(Remotes.Names.SprintIntent)
 local sprintKey = Config.Player.SprintKey
+local gamepadSprintKey = Config.Player.GamepadSprintKey
 
 local held = false
 local function send(isHeld)
@@ -24,8 +25,9 @@ local function send(isHeld)
 	sprintIntent:FireServer(isHeld)
 end
 
--- Keyboard sprint (PC). createTouchButton=false: touch devices get the custom hold button
--- below instead of CAS's small generic auto-button. Begin -> sprinting; End/Cancel -> released.
+-- Keyboard sprint (PC) + a gamepad stick-click bound to the same action -- CAS reports the same
+-- Begin/End for either input, so the held-state logic is unchanged. createTouchButton=false: touch
+-- devices get the custom hold button below instead of CAS's small generic auto-button.
 local SPRINT_ACTION = "Sprint"
 ContextActionService:BindAction(SPRINT_ACTION, function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
@@ -34,7 +36,7 @@ ContextActionService:BindAction(SPRINT_ACTION, function(_, inputState)
 		send(false)
 	end
 	return Enum.ContextActionResult.Sink
-end, false, sprintKey)
+end, false, sprintKey, gamepadSprintKey)
 
 -- Custom on-screen HOLD-to-sprint button for touch devices (iPad/iPhone), below the flashlight
 -- button. Active=true keeps camera panning usable. Render-only; hidden on PC.

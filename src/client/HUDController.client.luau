@@ -343,52 +343,111 @@ local function playWinCelebration()
 	):Play()
 end
 
--- Transient feedback toast (key pickup / locked door) --------------------------
-local toast = Instance.new("TextLabel")
-toast.Name = "Toast"
-toast.AnchorPoint = Vector2.new(0.5, 0.5)
-toast.Position = UDim2.fromScale(0.5, HUD.ToastYScale)
-toast.Size = UDim2.fromOffset(HUD.ToastWidth, HUD.ToastHeight)
-toast.BackgroundColor3 = Config.UI.PanelColor
-toast.BackgroundTransparency = 1 -- the panel fades IN with the toast (hidden at rest, not a persistent box)
-toast.Font = Config.UI.SubheadingFont
-toast.TextSize = HUD.ToastTextSize
-toast.TextColor3 = Config.Feedback.ToastColor
-toast.TextStrokeTransparency = 1
-toast.TextTransparency = 1
-toast.Text = ""
+-- Transient feedback toasts (key pickup / locked door / hunt alerts / achievements) ---------
+-- A FIFO STACK, not one reused label: in a busy co-op moment several events land together (a
+-- teammate's key + a hunt alert + an achievement), and a single shared label silently clobbered
+-- all but the last (a new message instantly overwrote the previous via a shared token). Each
+-- showToast now spawns its OWN short-lived label that fades and removes itself after its hold
+-- time; the container shows up to ToastStackMax at once, newest at the TOP (the canonical toast
+-- spot), and evicts the oldest when a further one arrives. Render-only -- the HUD decides nothing.
+local ToastStackMax = 3 -- most toasts on screen at once; a 4th evicts the oldest (a fixed render-only layout cap)
+local toastFadeSeconds = 0.5 -- seconds each toast takes to fade out before it removes itself
 
-local toastCorner = Instance.new("UICorner")
-toastCorner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
-toastCorner.Parent = toast
+local toastStack = Instance.new("Frame")
+toastStack.Name = "ToastStack"
+toastStack.AnchorPoint = Vector2.new(0.5, 0)
+-- Top-anchored half a toast above ToastYScale so a LONE toast's centre still lands exactly where
+-- the old single toast sat; extras then grow DOWNWARD, away from the key pips up top.
+toastStack.Position = UDim2.new(0.5, 0, HUD.ToastYScale, -HUD.ToastHeight / 2)
+toastStack.Size =
+	UDim2.fromOffset(HUD.ToastWidth, HUD.ToastHeight * ToastStackMax + Config.UI.ChipCornerRadius * (ToastStackMax - 1))
+toastStack.BackgroundTransparency = 1
+toastStack.Parent = gui
 
-local toastStroke = Instance.new("UIStroke")
-toastStroke.Color = Config.UI.StrokeColor
-toastStroke.Transparency = 1 -- fades in/out with the panel
-toastStroke.Thickness = Config.UI.StrokeThickness
-toastStroke.Parent = toast
+local toastLayout = Instance.new("UIListLayout")
+toastLayout.FillDirection = Enum.FillDirection.Vertical
+toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+toastLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+toastLayout.SortOrder = Enum.SortOrder.LayoutOrder -- newest gets the smallest order -> sits at the top
+toastLayout.Padding = UDim.new(0, Config.UI.ChipCornerRadius) -- the standard small UI spacing unit, so stacked chips never touch
+toastLayout.Parent = toastStack
 
-toast.Parent = gui
+-- One stacked toast label, styled exactly like the former single toast (panel + stroke fade IN
+-- with the text -- hidden at rest, not a persistent box). Returned hidden; showToast reveals it.
+local function makeToast()
+	local label = Instance.new("TextLabel")
+	label.Name = "Toast"
+	label.Size = UDim2.fromOffset(HUD.ToastWidth, HUD.ToastHeight)
+	label.BackgroundColor3 = Config.UI.PanelColor
+	label.BackgroundTransparency = 1
+	label.Font = Config.UI.SubheadingFont
+	label.TextSize = HUD.ToastTextSize
+	label.TextColor3 = Config.Feedback.ToastColor
+	label.TextStrokeTransparency = 1
+	label.TextTransparency = 1
+	label.Text = ""
 
-local toastToken = 0
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, Config.UI.ChipCornerRadius)
+	corner.Parent = label
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Config.UI.StrokeColor
+	stroke.Transparency = 1 -- fades in/out with the panel
+	stroke.Thickness = Config.UI.StrokeThickness
+	stroke.Parent = label
+
+	return label, stroke
+end
+
+local activeToasts = {} -- FIFO of live labels: [1] = oldest, [#] = newest
+local toastOrder = 0 -- decremented per toast so a newer label SORTS ABOVE older ones (top of the stack)
+
+local function removeToast(label)
+	local i = table.find(activeToasts, label)
+	if i then
+		table.remove(activeToasts, i)
+	end
+	label:Destroy()
+end
+
 local function showToast(text, color, seconds)
-	toastToken += 1
-	local mine = toastToken
-	toast.Text = text
-	toast.TextColor3 = color or Config.Feedback.ToastColor
-	toast.TextTransparency = 0
-	toast.TextStrokeTransparency = Config.UI.TextStrokeTransparency
-	toast.BackgroundTransparency = Config.UI.PanelTransparency
-	toastStroke.Transparency = Config.UI.StrokeTransparency
+	local label, stroke = makeToast()
+	label.Text = text
+	label.TextColor3 = color or Config.Feedback.ToastColor
+	toastOrder -= 1
+	label.LayoutOrder = toastOrder
+	label.Parent = toastStack
+	table.insert(activeToasts, label)
+
+	-- Cap the stack: each arrival evicts the OLDEST, so the freshest events are never crowded out.
+	while #activeToasts > ToastStackMax do
+		removeToast(activeToasts[1])
+	end
+
+	-- Reveal: panel + stroke + text fade in together (matches the former single-toast look).
+	label.TextTransparency = 0
+	label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+	label.BackgroundTransparency = Config.UI.PanelTransparency
+	stroke.Transparency = Config.UI.StrokeTransparency
+
+	-- Each label owns its OWN lifetime (no shared token): after its hold time it fades out and then
+	-- removes itself, so concurrent toasts never overwrite one another.
 	task.delay(seconds, function()
-		if mine == toastToken then
-			TweenService:Create(
-				toast,
-				TweenInfo.new(0.5),
-				{ TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 }
-			):Play()
-			TweenService:Create(toastStroke, TweenInfo.new(0.5), { Transparency = 1 }):Play()
+		if not label.Parent then
+			return -- already evicted by a later toast hitting the cap
 		end
+		TweenService:Create(
+			label,
+			TweenInfo.new(toastFadeSeconds),
+			{ TextTransparency = 1, TextStrokeTransparency = 1, BackgroundTransparency = 1 }
+		):Play()
+		TweenService:Create(stroke, TweenInfo.new(toastFadeSeconds), { Transparency = 1 }):Play()
+		task.delay(toastFadeSeconds, function()
+			if label.Parent then
+				removeToast(label)
+			end
+		end)
 	end)
 end
 

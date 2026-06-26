@@ -29,6 +29,17 @@ end
 local STATE = Attributes.MonsterState
 local player = Players.LocalPlayer
 
+-- Personal FX-strength pref (LocalPlayer attribute from SettingsController; render-only, client-local):
+-- scales the whole shake so motion-sensitive players can damp or kill it (0 == no shake). Cached +
+-- refreshed on change rather than read every frame. ReduceFlashing doesn't apply -- shake isn't a flash.
+local fxIntensity = Config.Settings.DefaultFxIntensity
+local function refreshFxIntensity()
+	local fx = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = if typeof(fx) == "number" then fx else Config.Settings.DefaultFxIntensity
+end
+refreshFxIntensity()
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshFxIntensity)
+
 local current = 0 -- smoothed continuous threat tremble (0..1)
 local impulse = 0 -- decaying one-shot impulse magnitude (in offset/tilt units)
 
@@ -66,7 +77,7 @@ local function threatTarget(): number
 	if not (hrp and monsters) then
 		return 0
 	end
-	local span = C.ThreatStartDistance - C.ThreatMaxDistance
+	local span = math.max(C.ThreatStartDistance - C.ThreatMaxDistance, 1e-3)
 	local target = 0
 	for _, rig in monsters:GetChildren() do
 		local rRoot = rig:FindFirstChild("HumanoidRootPart")
@@ -121,5 +132,8 @@ RunService:BindToRenderStep("CameraShake", Enum.RenderPriority.Camera.Value + 1,
 		pitch += math.cos(t * fi) * impulse * 0.42
 	end
 
-	camera.CFrame = camera.CFrame * CFrame.new(ox, oy, 0) * CFrame.Angles(math.rad(pitch), 0, math.rad(roll))
+	-- The FX-strength pref scales both layers (tremble + impulse are already folded into the offsets).
+	camera.CFrame = camera.CFrame
+		* CFrame.new(ox * fxIntensity, oy * fxIntensity, 0)
+		* CFrame.Angles(math.rad(pitch * fxIntensity), 0, math.rad(roll * fxIntensity))
 end)

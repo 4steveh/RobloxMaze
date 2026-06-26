@@ -22,6 +22,21 @@ local C = Config.Chase
 local STATE = Attributes.MonsterState
 local player = Players.LocalPlayer
 
+-- Personal comfort/accessibility prefs (LocalPlayer attributes from SettingsController; render-only,
+-- client-local), cached + refreshed on change so we don't read attributes every frame. FxIntensity
+-- scales the whole effect (0 == neutral grade); ReduceFlashing holds a STEADY wash (no heartbeat pulse).
+local fxIntensity = Config.Settings.DefaultFxIntensity
+local reduceFlashing = Config.Settings.DefaultReduceFlashing
+local function refreshPrefs()
+	local fx = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = if typeof(fx) == "number" then fx else Config.Settings.DefaultFxIntensity
+	local rf = player:GetAttribute(Attributes.SettingReduceFlashing)
+	reduceFlashing = if typeof(rf) == "boolean" then rf else Config.Settings.DefaultReduceFlashing
+end
+refreshPrefs()
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshPrefs)
+player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshPrefs)
+
 -- Dedicated grade (composes over the place's static ColorGrading/ColorCorrection).
 local cc = Instance.new("ColorCorrectionEffect")
 cc.Name = "ChaseGrade"
@@ -88,6 +103,20 @@ local function glowOf(rig)
 	return nil
 end
 
+-- Drop a despawned rig's cached glow so neither cache leaks entries for monsters
+-- that have left Workspace.Monsters (mirrors MonsterAnimController.removeRig).
+local function forgetRig(rig)
+	local g = glowByRig[rig]
+	if g then
+		glowBase[g] = nil
+	end
+	glowByRig[rig] = nil
+end
+task.spawn(function()
+	local monsters = Workspace:WaitForChild(WorldFolders.Monsters)
+	monsters.ChildRemoved:Connect(forgetRig)
+end)
+
 local current = 0
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
@@ -97,7 +126,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local target = 0
 	local nearestAggro, nearestDist, nearestProx = nil, math.huge, 0
 	if hrp and monsters then
-		local span = C.ThreatStartDistance - C.ThreatMaxDistance
+		local span = math.max(C.ThreatStartDistance - C.ThreatMaxDistance, 1e-3)
 		for _, rig in monsters:GetChildren() do
 			local rRoot = rig:FindFirstChild("HumanoidRootPart")
 			local st = rig:GetAttribute(STATE)
@@ -125,12 +154,13 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- Smoothly approach the target, then pulse with the threat (a visual heartbeat).
+	-- Smoothly approach the target, then pulse with the threat (a visual heartbeat). ReduceFlashing
+	-- zeroes the pulse amplitude so the wash holds STEADY (the grade stays; only the strobe is cut),
+	-- and the FX-strength pref scales the whole effect (0 == neutral grade, no vignette, no flare).
 	current += (target - current) * math.min(dt * C.FadeRate, 1)
-	local pulse = if current > 0.01
-		then 1 + math.sin(os.clock() * math.pi * 2 * C.PulseHz) * C.PulseAmp * current
-		else 1
-	local intensity = math.clamp(current * pulse, 0, 1)
+	local pulseAmp = if reduceFlashing then 0 else C.PulseAmp
+	local pulse = if current > 0.01 then 1 + math.sin(os.clock() * math.pi * 2 * C.PulseHz) * pulseAmp * current else 1
+	local intensity = math.clamp(current * pulse, 0, 1) * fxIntensity
 
 	setGrade(intensity)
 	local bandAlpha = 1 - intensity * (1 - C.VignetteMinTransparency)
@@ -138,12 +168,13 @@ RunService.RenderStepped:Connect(function(dt)
 		f.BackgroundTransparency = bandAlpha
 	end
 
-	-- Flare the nearest hunting monster's eyes by its proximity.
+	-- Flare the nearest hunting monster's eyes by its proximity (scaled by the FX-strength pref).
 	if nearestAggro then
 		local g = glowOf(nearestAggro)
 		if g then
-			g.Brightness = glowBase[g].b + (C.EyeGlowBrightness - glowBase[g].b) * nearestProx
-			g.Range = glowBase[g].r + (C.EyeGlowRange - glowBase[g].r) * nearestProx
+			local flare = nearestProx * fxIntensity
+			g.Brightness = glowBase[g].b + (C.EyeGlowBrightness - glowBase[g].b) * flare
+			g.Range = glowBase[g].r + (C.EyeGlowRange - glowBase[g].r) * flare
 		end
 	end
 end)

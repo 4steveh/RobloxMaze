@@ -149,10 +149,24 @@ local function shuffleInPlace(t)
 	end
 end
 
-local function spawnRoundKeys()
-	-- Keys avoid two kinds of spot: inside a monster's spawn bubble (so a required key never
-	-- sits in the bunny's lap), AND right on top of a PlayerStart (so you can't auto-collect
-	-- one the instant you spawn -- you must go FIND them).
+-- Flat XZ distance (ground-plane), consistent with the monsters' sensing.
+local function nearAny(pos, list, radius)
+	for _, p in list do
+		if (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(p.X, 0, p.Z)).Magnitude < radius then
+			return true
+		end
+	end
+	return false
+end
+
+-- The far-first ordered list of KeySpot markers eligible to host a key RIGHT NOW. Keys avoid
+-- two kinds of spot: inside a monster's spawn bubble (so a required key never sits in the bunny's
+-- lap), AND right on top of a PlayerStart (so you can't auto-collect one the instant you spawn --
+-- you must go FIND them); "far" spots clear of both are preferred and "near" ones kept only as a
+-- fallback, so the round still gets enough keys. A spot already holding a live key (required OR
+-- bonus) is skipped so a freshly-spawned key never doubles up on an occupied one. Factored out so
+-- BOTH the round spawn AND the on-catch drop (spawnOneKey) reuse the exact same fair partition.
+local function orderedKeySpots()
 	local monsterSpawns, playerStarts = {}, {}
 	for _, m in Discovery.getAll(Tags.MonsterSpawn) do
 		if m:IsA("BasePart") then
@@ -164,25 +178,25 @@ local function spawnRoundKeys()
 			table.insert(playerStarts, m.Position)
 		end
 	end
-	-- Flat XZ distance (ground-plane), consistent with the monsters' sensing.
-	local function nearAny(pos, list, radius)
-		for _, p in list do
-			if (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(p.X, 0, p.Z)).Magnitude < radius then
-				return true
-			end
-		end
-		return false
-	end
 	local function nearAvoid(pos)
 		return nearAny(pos, monsterSpawns, Config.Monster.Shared.NoKeySpawnRadius)
 			or nearAny(pos, playerStarts, Config.Keys.NoSpawnNearStartRadius)
+	end
+
+	-- Spots already taken by a live key (its stored base XZ); a fresh key must land on a free one,
+	-- so a drop never stacks onto an existing key (within a key's own pickup radius reads as "here").
+	local occupied = {}
+	for key, base in keyBase do
+		if key.Parent then
+			table.insert(occupied, base)
+		end
 	end
 
 	-- Partition spots: prefer "far" ones; "near" are a fallback only if there aren't
 	-- enough far spots to fill the round (so the round always gets SpawnPerRound keys).
 	local far, near = {}, {}
 	for _, marker in Discovery.getAll(Tags.KeySpot) do
-		if marker:IsA("BasePart") then
+		if marker:IsA("BasePart") and not nearAny(marker.Position, occupied, Config.Spatial.KeyPickupRadius) then
 			table.insert(if nearAvoid(marker.Position) then near else far, marker)
 		end
 	end
@@ -196,7 +210,11 @@ local function spawnRoundKeys()
 	for _, m in near do
 		table.insert(ordered, m)
 	end
+	return ordered
+end
 
+local function spawnRoundKeys()
+	local ordered = orderedKeySpots()
 	local count = math.min(Config.Keys.SpawnPerRound, #ordered)
 	for i = 1, count do
 		makeKey(ordered[i].Position)
@@ -207,6 +225,16 @@ local function spawnRoundKeys()
 	local bonusCount = math.min(Config.Keys.BonusSpawnPerRound, #ordered - count)
 	for i = count + 1, count + bonusCount do
 		makeKey(ordered[i].Position, true)
+	end
+end
+
+-- Drop ONE fresh REQUIRED key back into the maze at the best available spot (far-first, never on
+-- an occupied one) -- the replacement key for the on-catch stake below. Degrades to a no-op if the
+-- layout has no free spot left (the same graceful degrade spawnRoundKeys has on a sparse map).
+local function spawnOneKey()
+	local ordered = orderedKeySpots()
+	if #ordered > 0 then
+		makeKey(ordered[1].Position)
 	end
 end
 
@@ -264,6 +292,26 @@ ServerSignals.get(ServerSignals.Names.RoundReset).Event:Connect(function()
 	setTeamCount(0)
 	setBonusCount(0)
 	spawnRoundKeys()
+end)
+
+-- A monster KILL resolved (DownedService.kill fires ServerSignals.PlayerKilled, NOT the co-op
+-- down path): the optional drop-a-key STAKE. Gated by Config.Keys.DropOnCatch (default off -- a
+-- catch then costs no progress, the current behaviour). When ON and the team holds at least one
+-- key, a kill costs the team its most-recent key: decrement the shared count (every player's
+-- KeyCount re-syncs the HUD pip row + objective tracker) and drop ONE fresh required key back into
+-- the maze, so a catch sets real objective progress back instead of being free. Mirrors the
+-- RoundReset connection above -- we only react and touch our OWN state (the keys + count).
+ServerSignals.get(ServerSignals.Names.PlayerKilled).Event:Connect(function()
+	if not Config.Keys.DropOnCatch or teamKeyCount <= 0 then
+		return -- gated off, or no progress left to lose
+	end
+	setTeamCount(teamKeyCount - 1) -- mirrors the lower count onto every player's KeyCount attribute
+	spawnOneKey() -- re-introduce one required key somewhere fresh + far for the team to re-earn
+	-- Re-broadcast the (now lower) count over the same KeyCollected path a pickup fires, so the HUD
+	-- pip row + objective tracker re-sync to the loss (name omitted -- a drop isn't anyone's pickup).
+	for _, p in Players:GetPlayers() do
+		keyCollectedRemote:FireClient(p, teamKeyCount)
+	end
 end)
 
 -- Per-player pickup scan, factored out so it can be pcall-isolated: a throw on one

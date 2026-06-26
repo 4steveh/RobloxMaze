@@ -9,16 +9,28 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
 local C = Config.Decoy
 local TC = Config.TouchControls
+local ST = Config.Audio.Stingers
 local throwRemote = Remotes.get(Remotes.Names.ThrowDecoy)
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+-- Local release confirmation: a short 2D one-shot the instant the throw is accepted, so the input
+-- feels immediate (the landed decoy's 3D rattle is server-side). Routed through the SFX bus.
+local throwSound = Instance.new("Sound")
+throwSound.SoundId = ST.DecoyThrowId
+throwSound.Volume = ST.DecoyThrowVolume
+throwSound.PlaybackSpeed = ST.DecoyThrowPitch
+throwSound.SoundGroup = AudioGroups.get("SFX")
+throwSound.Parent = SoundService
 
 local cooldownUntil = 0 -- os.clock() until which the local UI shows "on cooldown"
 
@@ -28,15 +40,17 @@ local function tryThrow()
 	end
 	cooldownUntil = os.clock() + C.Cooldown
 	throwRemote:FireServer()
+	throwSound:Play()
 end
 
--- Keyboard (PC). createTouchButton=false: touch devices get the custom button below.
+-- Keyboard (PC) + a gamepad button bound to the same action. createTouchButton=false: touch
+-- devices get the custom button below.
 ContextActionService:BindAction("ThrowDecoy", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
 		tryThrow()
 	end
 	return Enum.ContextActionResult.Sink
-end, false, C.ThrowKey)
+end, false, C.ThrowKey, C.GamepadThrowKey)
 
 -- HUD cooldown chip (all devices): "DECOY" + a draining fill while on cooldown, bottom-left.
 local gui = Instance.new("ScreenGui")

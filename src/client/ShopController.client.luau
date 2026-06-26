@@ -248,8 +248,9 @@ end)
 closeBtn.Activated:Connect(function()
 	setOpen(false)
 end)
+-- Open/close on the keyboard key or the gamepad button (both from Config, no hardcoded KeyCode).
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.KeyCode == Enum.KeyCode.B then
+	if not gameProcessed and (input.KeyCode == Config.Shop.OpenKey or input.KeyCode == Config.Shop.GamepadOpenKey) then
 		setOpen(not panel.Visible)
 	end
 end)

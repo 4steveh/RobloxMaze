@@ -15,8 +15,24 @@ local Config = require(ReplicatedStorage.Config)
 local Attributes = require(ReplicatedStorage.Attributes)
 
 local N = Config.Noise
+local S = Config.Settings
 local threshold = math.clamp(Config.Monster.Species.Monkey.HearThreshold, 0, 1)
 local player = Players.LocalPlayer
+
+-- Player accessibility prefs (client-local attributes, no server trust). FxIntensity scales the
+-- attention-grabbing red PULSE; ReduceFlashing kills the strobe outright. The BAR's level + the
+-- safe/loud meaning never depend on these -- only the flash that draws the eye does.
+local fxIntensity = S.DefaultFxIntensity
+local reduceFlashing = S.DefaultReduceFlashing
+local function refreshPrefs()
+	local fx = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = math.clamp(if typeof(fx) == "number" then fx else S.DefaultFxIntensity, 0, 1)
+	local rf = player:GetAttribute(Attributes.SettingReduceFlashing)
+	reduceFlashing = if typeof(rf) == "boolean" then rf else S.DefaultReduceFlashing
+end
+refreshPrefs()
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshPrefs)
+player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshPrefs)
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "NoiseMeterGui"
@@ -97,6 +113,24 @@ label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
 label.Text = N.MeterLabel
 label.Parent = panel
 
+-- Colorblind redundancy: green-vs-red alone can't tell deuteranopia/protanopia "safe" from "audible",
+-- so a word carries the same meaning -- "QUIET" below the threshold, "LOUD" at/above it. Top-left of the
+-- meter (mirroring the right-aligned "NOISE" caption), so the safe/loud read survives without hue.
+local stateLabel = Instance.new("TextLabel")
+stateLabel.Name = "StateLabel"
+stateLabel.AnchorPoint = Vector2.new(0, 1)
+stateLabel.Position = UDim2.fromOffset(0, -2)
+stateLabel.Size = UDim2.fromOffset(60, 16)
+stateLabel.BackgroundTransparency = 1
+stateLabel.Font = Config.UI.SubheadingFont
+stateLabel.TextSize = 12
+stateLabel.TextXAlignment = Enum.TextXAlignment.Left
+stateLabel.TextColor3 = N.MeterQuietColor
+stateLabel.TextStrokeColor3 = Config.UI.TextStrokeColor
+stateLabel.TextStrokeTransparency = Config.UI.TextStrokeTransparency
+stateLabel.Text = "QUIET"
+stateLabel.Parent = panel
+
 RunService.RenderStepped:Connect(function()
 	local level = math.clamp(player:GetAttribute(Attributes.NoiseLevel) or 0, 0, 1)
 	fill.Size = UDim2.fromScale(level, 1)
@@ -104,15 +138,21 @@ RunService.RenderStepped:Connect(function()
 	if audible then
 		-- Loud: flip red and pulse so it reads as a live alarm -- the marker + its caption flash too,
 		-- so the eye is drawn to exactly the line you just crossed ("the monkey can hear you NOW").
-		local pulse = 0.5 + 0.5 * math.sin(os.clock() * 10)
+		-- ReduceFlashing holds a STEADY red (no strobe); FxIntensity scales how hard the flash brightens
+		-- (0 = also steady). The fill/label still flip red regardless, so the alarm's meaning is never lost.
+		local pulse = if reduceFlashing then 0 else (0.5 + 0.5 * math.sin(os.clock() * 10)) * fxIntensity
 		fill.BackgroundColor3 = N.MeterLoudColor:Lerp(Color3.new(1, 1, 1), pulse * 0.25)
 		label.TextColor3 = N.MeterLoudColor
 		marker.BackgroundColor3 = N.MeterLoudColor
 		thresholdLabel.TextColor3 = N.MeterLoudColor:Lerp(Color3.new(1, 1, 1), pulse * 0.4)
+		stateLabel.Text = "LOUD"
+		stateLabel.TextColor3 = N.MeterLoudColor
 	else
 		fill.BackgroundColor3 = N.MeterQuietColor
 		label.TextColor3 = N.MeterQuietColor
 		marker.BackgroundColor3 = N.MeterThresholdColor
 		thresholdLabel.TextColor3 = N.MeterThresholdColor
+		stateLabel.Text = "QUIET"
+		stateLabel.TextColor3 = N.MeterQuietColor
 	end
 end)
