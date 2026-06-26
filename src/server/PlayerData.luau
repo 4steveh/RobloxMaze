@@ -93,7 +93,9 @@ function PlayerData.load(player, data)
 		if type(data.stats) == "table" then
 			for k in p.stats do
 				if type(data.stats[k]) == "number" then
-					p.stats[k] = math.max(0, data.stats[k])
+					-- floor (like coins) so a corrupted/exploited fractional save can't make a stat
+					-- diverge from its integer leaderstat IntValue (1.5 internal vs 1 displayed).
+					p.stats[k] = math.max(0, math.floor(data.stats[k]))
 				end
 			end
 		end
@@ -188,17 +190,19 @@ function PlayerData.recordRound(player, summary)
 	if not p then
 		return nil
 	end
+	-- Keep every stat an integer (survival seconds arrive fractional from os.clock deltas) so the
+	-- whole stats table stays whole-number-consistent with its leaderstat IntValues.
+	local secs = math.floor(math.max(0, summary.survivalSeconds or 0))
 	local s = p.stats
 	s.roundsPlayed += 1
 	if summary.escaped then
 		s.escapes += 1
-		local secs = summary.survivalSeconds or 0
 		if secs > 0 and (s.fastestEscapeSeconds == 0 or secs < s.fastestEscapeSeconds) then
 			s.fastestEscapeSeconds = secs -- a competitive PB (0 = never escaped yet)
 		end
 	end
-	s.bonusKeys += math.max(0, summary.bonusKeys or 0)
-	s.longestSurvivalSeconds = math.max(s.longestSurvivalSeconds, summary.survivalSeconds or 0)
+	s.bonusKeys += math.floor(math.max(0, summary.bonusKeys or 0))
+	s.longestSurvivalSeconds = math.max(s.longestSurvivalSeconds, secs)
 	p.dirty = true
 	mirror(player, p)
 	return s
