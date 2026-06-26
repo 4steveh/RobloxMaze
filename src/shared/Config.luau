@@ -1044,6 +1044,27 @@ Config.Economy = table.freeze({
 	ShopActionRateLimit = 0.2, -- min seconds between accepted ShopAction messages (anti-spam, hostile input)
 })
 
+-- Achievements: persistent milestone rewards (the long-tail retention carrot) --------
+-- Lifetime stats (PlayerData.stats) cross a threshold -> a ONE-TIME coin reward (tracked so it
+-- pays once, persisted). Pure milestone coins -- no gameplay power, so it stays cosmetic-economy
+-- only. Each: { id (STABLE -- the DataStore remembers earned ids forever; never rename/reuse), the
+-- `stat` key it watches, the `threshold` to cross, the `reward` coins, and a display `name`. Checked
+-- by the pure shared/Achievements module after each round's stats update (StatsService).
+Config.Achievements = table.freeze({
+	List = table.freeze({
+		table.freeze({ id = "first_escape", stat = "escapes", threshold = 1, reward = 40, name = "FIRST ESCAPE" }),
+		table.freeze({ id = "escape_10", stat = "escapes", threshold = 10, reward = 150, name = "SERIAL SURVIVOR" }),
+		table.freeze({ id = "escape_50", stat = "escapes", threshold = 50, reward = 600, name = "UNCATCHABLE" }),
+		table.freeze({ id = "rounds_25", stat = "roundsPlayed", threshold = 25, reward = 120, name = "REGULAR" }),
+		table.freeze({ id = "rounds_100", stat = "roundsPlayed", threshold = 100, reward = 500, name = "VETERAN" }),
+		table.freeze({ id = "bonus_10", stat = "bonusKeys", threshold = 10, reward = 150, name = "TREASURE HUNTER" }),
+		table.freeze({ id = "bonus_50", stat = "bonusKeys", threshold = 50, reward = 600, name = "HOARDER" }),
+	}),
+	-- The unlock toast (client). Colour = the coins/keys warn gold (a positive milestone).
+	ToastPrefix = "ACHIEVEMENT", -- "ACHIEVEMENT — FIRST ESCAPE  (+40)"
+	ToastSeconds = 4.0,
+})
+
 -- Persistence: DataStore tuning (DataService is the only DataStore toucher) --------
 -- Coins + owned/equipped cosmetics persist per player. DataStore needs Studio's
 -- "Enable Studio Access to API Services" on a PUBLISHED experience to work in Studio;
