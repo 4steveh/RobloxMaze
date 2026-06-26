@@ -26,6 +26,7 @@ local Names = table.freeze({
 	TrapTriggered = "TrapTriggered", -- server -> ALL clients: a trap changed phase (payload: trapPart, "windup"|"fire") -- drives the telegraph flash + dart FX
 	RoundSummary = "RoundSummary", -- server -> client: end-of-round results (payload: {coinsGained, total, keys, escaped}) -- drives the results panel
 	DataReady = "DataReady", -- server -> client: this player's saved profile has loaded (the shop unlocks)
+	AchievementUnlocked = "AchievementUnlocked", -- server -> client: a lifetime-stat milestone just earned (payload: {name, reward}) -- drives the unlock toast (StatsService)
 	ShopResult = "ShopResult", -- server -> client: result of a ShopAction (payload: {ok, op, id, reason?})
 
 	-- CLIENT -> SERVER (inbound). Payload is HOSTILE: validate type and rate-limit on the
@@ -50,6 +51,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.TrapTriggered,
 	Names.RoundSummary,
 	Names.DataReady,
+	Names.AchievementUnlocked,
 	Names.ShopResult,
 	Names.SprintIntent,
 	Names.ShopAction,

@@ -447,6 +447,21 @@ huntingAlertRemote.OnClientEvent:Connect(function(huntedName)
 	)
 end)
 
+-- Achievement unlocked: a lifetime-stat milestone earned -> a gold toast "ACHIEVEMENT — NAME  (+N)".
+local achievementRemote = Remotes.get(Remotes.Names.AchievementUnlocked)
+achievementRemote.OnClientEvent:Connect(function(data)
+	if type(data) ~= "table" then
+		return
+	end
+	local A = Config.Achievements
+	showToast(
+		string.format("%s — %s  (+%d)", A.ToastPrefix, data.name or "", data.reward or 0),
+		Config.UI.WarnColor,
+		A.ToastSeconds
+	)
+	playPickupPulse() -- a positive flash to match the milestone
+end)
+
 -- Pip count syncs from the server-authoritative KeyCount attribute, so it is correct on
 -- pickup AND on a round reset to 0 (the remote below only drives the chime/toast juice).
 local function setKeyCount(count)
