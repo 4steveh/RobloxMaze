@@ -12,6 +12,7 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local ContextActionService = game:GetService("ContextActionService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -270,7 +271,7 @@ if UserInputService.TouchEnabled then
 	corner.CornerRadius = UDim.new(0.5, 0) -- circular
 	corner.Parent = btn
 	local ring = Instance.new("UIStroke")
-	ring.Thickness = 3
+	ring.Thickness = TC.RingThickness
 	ring.Parent = btn
 	-- Optional icon image (placeholder until a real asset id is set).
 	if TC.FlashlightIconImage ~= "" then
@@ -287,9 +288,21 @@ if UserInputService.TouchEnabled then
 		ring.Color = if lightOn then TC.FlashlightOnColor else TC.FlashlightOffColor
 	end
 	refreshRing()
+	-- Tap-punch: a quick scale pop on every press (springs back via Back/Out) -- tactile feedback kids can SEE.
+	local scale = Instance.new("UIScale")
+	scale.Parent = btn
+	local function punch()
+		scale.Scale = TC.PressScale
+		TweenService:Create(
+			scale,
+			TweenInfo.new(TC.PressReturnSeconds, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{ Scale = 1 }
+		):Play()
+	end
 	btn.Activated:Connect(function()
 		setLight(not lightOn)
 		refreshRing()
+		punch()
 	end)
 	btn.Parent = touchGui
 end

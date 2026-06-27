@@ -101,6 +101,12 @@ local Attributes = {
 	SettingReduceFlashing = "SettingReduceFlashing", -- boolean: floor flicker / cut screen strobes
 	SettingMasterVolume = "SettingMasterVolume", -- number 0..1: scales the AudioGroups Master bus
 
+	-- number on a Player: flare charges remaining this round. Server-authoritative (FlareService,
+	-- refilled on RoundReset), a READ-ONLY mirror for the HUD like Stamina/KeyCount -- the throw handler
+	-- validates against the server's own copy; the client only displays it. The blind itself reuses the
+	-- EXISTING MonsterStunnedUntil rig attribute (no new rig attribute).
+	FlareCharges = "FlareCharges",
+
 	-- number on a Player (0..1): server-computed audible NOISE this player is making
 	-- (from movement speed -- sprinting is loud, creeping is near-silent). Owned by
 	-- NoiseService (never client-set), read by the monkey's hearing detection and the

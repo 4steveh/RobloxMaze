@@ -225,7 +225,9 @@ local lastClock = os.clock()
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
-	local dt = math.max(now - lastClock, 1e-3)
+	-- Clamp the upper bound too: a server hitch must not jump discoverTime past DiscoverSeconds
+	-- in one tick (MonsterService + NoiseService clamp their dt for the same reason).
+	local dt = math.clamp(now - lastClock, 1e-3, Config.Spatial.PollInterval * H.MaxTickDtFactor)
 	lastClock = now
 
 	for player, st in hideState do

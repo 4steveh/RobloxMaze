@@ -11,6 +11,13 @@
 			"$className": "ReplicatedStorage",
 			"$path": "src/shared"
 		},
+		"Lighting": {
+			"$className": "Lighting",
+			"$ignoreUnknownInstances": true,
+			"$properties": {
+				"Technology": "ShadowMap"
+			}
+		},
 		"StarterPlayer": {
 			"$className": "StarterPlayer",
 			"StarterPlayerScripts": {

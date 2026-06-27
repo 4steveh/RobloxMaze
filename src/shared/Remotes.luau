@@ -40,6 +40,7 @@ local Names = table.freeze({
 	SprintIntent = "SprintIntent", -- client -> server: boolean, "is the sprint key held"
 	ShopAction = "ShopAction", -- client -> server: HOSTILE payload {op="buy"|"equip", id=string} -- validated + rate-limited (ShopService)
 	ThrowDecoy = "ThrowDecoy", -- client -> server: NO payload (just intent). The server computes the landing point from the player's OWN server-known position+facing (never trusts a client position), validates a per-player cooldown, spawns a rattling decoy + fires ServerSignals.NoiseEvent there to misdirect the monkey (DecoyService)
+	ThrowFlare = "ThrowFlare", -- client -> server: NO payload (just intent). The server computes the landing from the player's OWN known position+facing (never a client position), validates a per-round charge budget + cooldown, spawns a burning flare + freezes every monster rig within Config.Flare.BlindRadius via the MonsterStunnedUntil seam (FlareService)
 })
 
 -- The authoritative list of RemoteEvent names the server creates. Grow via Names.
@@ -65,6 +66,7 @@ local REMOTE_EVENTS: { string } = {
 	Names.SprintIntent,
 	Names.ShopAction,
 	Names.ThrowDecoy,
+	Names.ThrowFlare,
 	Names.HideIntent,
 }
 

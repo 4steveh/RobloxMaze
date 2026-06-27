@@ -159,12 +159,13 @@ Config.Downed = table.freeze({
 	-- (a downed solo player with no possible rescuer just respawns either way). The downed
 	-- code is fully fixed (it anchors the body in place rather than ragdolling, which used to
 	-- clip players through the floor); it's gated only until the 2-player flow is playtested.
-	Enabled = false,
-	BleedoutSeconds = 18, -- seconds downed before you die/respawn if no one reaches you
-	ReviveRadius = 7, -- studs a living teammate must be within to revive you
-	ReviveSeconds = 3.5, -- seconds of a teammate staying close to complete the revive
+	Enabled = true, -- co-op DOWNED/revive ON (was false). A NO-OP for SOLO play (no possible rescuer -> the unchanged kill->checkpoint path), and the best co-op beat for kids together. Balance-sensitive; tune the mercy values below.
+	BleedoutSeconds = 12, -- seconds downed before you die/respawn if no one reaches you (was 18; a shorter frozen wait for a young player when no friend is coming)
+	ReviveRadius = 8, -- studs a living teammate must be within to revive you (was 7; touch players position imprecisely)
+	ReviveSeconds = 3, -- seconds of a teammate staying close to complete the revive (was 3.5; less time the rescuer is exposed in the danger zone)
 	ReviveDecayScale = 1.5, -- revive progress drains at this × the fill rate when no rescuer is near
 	ReviveGraceSeconds = 3, -- seconds of monster-ignore invulnerability right after a revive
+	MaxTickDtFactor = 4, -- clamp the revive/decay poll's dt to PollInterval*this so a server hitch (e.g. a ComputeAsync stall) can't snap revive progress past its threshold in one tick (mirrors Noise / Monster.Shared)
 
 	-- Downed/revive HUD (DownedController; render-only) ---------------------------
 	OverlayColor = Color3.fromRGB(45, 0, 0), -- the downed-screen wash
@@ -344,7 +345,7 @@ Config.Round = table.freeze({
 	-- peace timer). At each round start the monsters stay DORMANT -- they roam their territory but
 	-- sense nothing -- so players orient and start the key-hunt in calm; then the hunt switches on.
 	-- The threat being ABSENT for a beat is what makes its arrival land. 0 disables the window.
-	PeaceSeconds = 20, -- seconds of calm at round start before the monsters begin hunting
+	PeaceSeconds = 25, -- seconds of calm at round start before the monsters begin hunting (was 20; a gentler per-round on-ramp for kids to re-learn the touch controls + grab a first key)
 
 	-- A round that NOBODY escapes still has to END -- otherwise the maze never re-carves and the
 	-- "a run is never worth zero" economy floor never pays out (a lobby that keeps dying is stuck on
@@ -361,15 +362,15 @@ Config.Round = table.freeze({
 Config.Aggression = table.freeze({
 	Enabled = true,
 	MaxSpeedBonus = 0.18, -- +18% monster WalkSpeed at full aggression (all keys collected)
-	MaxRangeBonus = 0.35, -- +35% sight/hearing range at full aggression
+	MaxRangeBonus = 0.25, -- +25% sight/hearing range at full aggression (was 0.35; the endgame sense ramp stays felt but the final dash to the exit isn't near-deterministic for kids)
 })
 
 -- HUD (icon-forward; counts come from gameplay Config, never hardcoded) ----------
 Config.HUD = table.freeze({
 	-- Key pips (how many = Config.Keys.RequiredToWin)
-	PipSize = 34, -- px diameter
+	PipSize = 40, -- px diameter (was 34: bigger key pips = clearer objective progress for kids)
 	PipGap = 10, -- px between pips
-	PipTopOffset = 24, -- px from the top edge
+	PipTopOffset = 30, -- px from the top edge (was 24: more headroom under the Roblox topbar)
 	PipFilledColor = Color3.fromRGB(240, 205, 70),
 	PipEmptyColor = Color3.fromRGB(40, 40, 48),
 	PipStrokeColor = Color3.fromRGB(15, 15, 18),
@@ -378,12 +379,14 @@ Config.HUD = table.freeze({
 	CornerRadius = 6, -- px: rounded-corner radius for gauge panels
 
 	-- Battery gauge
-	BatteryWidth = 180, -- px
+	BatteryWidth = 200, -- px (was 180: wider gauge reads at a glance on iPad)
 	BatteryHeight = 16, -- px
 	BatteryMargin = 18, -- px from the screen corner
 	BatteryBackColor = Color3.fromRGB(25, 25, 30),
 	BatteryFillColor = Color3.fromRGB(120, 220, 255),
 	BatteryLowColor = Color3.fromRGB(220, 70, 60),
+	BatteryLowPulseHz = 2.5, -- the low-battery fill THROBS its transparency at this rate (a "your light is dying" tell paired with the low-battery beep)
+	BatteryLowPulseDepth = 0.45, -- how deep the throb dips the fill transparency (shallow -- a throb, not a strobe; honors REDUCE-FLASHING)
 
 	-- Stamina gauge (sits just above the battery gauge, same width)
 	StaminaGap = 10, -- px between the stamina gauge and the battery gauge above it
@@ -392,7 +395,7 @@ Config.HUD = table.freeze({
 
 	-- Gauge captions (so a new player knows what the two unlabeled left-corner bars ARE -- mirrors
 	-- the NoiseMeter's "NOISE" caption on the right). Small all-caps tags sitting above each gauge.
-	GaugeLabelSize = 11, -- px text size for the BATTERY / STAMINA captions
+	GaugeLabelSize = 13, -- px text size for the BATTERY / STAMINA captions (was 11: legible for kids)
 	BatteryLabel = "BATTERY",
 	StaminaLabel = "STAMINA",
 
@@ -400,7 +403,7 @@ Config.HUD = table.freeze({
 	ToastYScale = 0.30, -- screen-height fraction for the toast's vertical position
 	ToastWidth = 420, -- px
 	ToastHeight = 34, -- px
-	ToastTextSize = 24, -- px
+	ToastTextSize = 26, -- px (was 24: larger toast text for young readers)
 
 	-- Exit arrow (shown only once all keys are collected)
 	ArrowSize = 64, -- px
@@ -408,12 +411,25 @@ Config.HUD = table.freeze({
 	ArrowColor = Color3.fromRGB(240, 205, 70),
 	ArrowLabel = "EXIT", -- caption under the gold exit arrow, so its glyph can't be mistaken for the green KEY arrow
 	ArrowLabelSize = 14, -- px
+	ExitArrowPulseHz = 2.0, -- the exit arrow gently throbs its scale at this rate once all keys are in (eyes snap to the run-for-it goal)
+	ExitArrowPulseScale = 0.12, -- peak extra scale of the throb (subtle)
 
 	-- Key-pickup SCREEN PULSE: a brief full-screen gold flash on every pickup, so a key grabbed
 	-- mid-chase (eyes on the monster, not the pip row) still registers. Render-only juice atop the pip pop.
 	PickupPulseColor = Color3.fromRGB(240, 205, 70),
 	PickupPulseTransparency = 0.78, -- the pulse's most-opaque alpha at its peak (subtle -- a wash, not a blink)
 	PickupPulseSeconds = 0.45, -- seconds the pulse fades from peak to clear
+
+	-- ALL-KEYS celebration: the moment the team grabs the LAST key (count == RequiredToWin), a GREEN
+	-- full-screen flash + a "RUN FOR THE EXIT" toast, so the objective-complete beat reads even with eyes
+	-- on the monster (completes the existing KeyComplete audio sting). Green (not the per-key gold) so
+	-- "done -- go!" is distinct. Render-only; honors REDUCE-FLASHING.
+	AllKeysFlashColor = Color3.fromRGB(150, 255, 175),
+	AllKeysFlashPeak = 0.45, -- most-opaque alpha at the flash peak (a wash, not a blackout)
+	AllKeysFlashSeconds = 0.7, -- seconds the flash fades to clear
+	AllKeysToastText = "ALL KEYS! RUN FOR THE EXIT",
+	AllKeysToastColor = Color3.fromRGB(150, 255, 175),
+	AllKeysToastSeconds = 2.6, -- seconds the all-keys toast holds
 
 	-- Win overlay
 	WinBackColor = Color3.fromRGB(10, 14, 12),
@@ -535,7 +551,7 @@ Config.Monster = table.freeze({
 		-- burst (Config.Player.SprintSpeed 22) lets a skilled player open a gap -- winnable.
 		Bunny = table.freeze({
 			PatrolSpeed = 10, -- WalkSpeed while patrolling / searching
-			ChaseSpeed = 19, -- WalkSpeed while chasing
+			ChaseSpeed = 18, -- WalkSpeed while chasing (was 19; still > walk 16, so a sprint burst gains 4/s not 3/s -- kid mercy)
 			-- Hard CAP on the bunny's hunt speed after Aggression x Bloodlust stack: kept BELOW player
 			-- SprintSpeed 22 so a sprint burst can ALWAYS open a gap ("a chase is winnable"). Without
 			-- it, 19 x 1.18 (aggro) x 1.25 (bloodlust) = 28 > 22 made the bunny literally unoutrunnable.
@@ -571,7 +587,7 @@ Config.Monster = table.freeze({
 			-- Speeds (vs player WalkSpeed 16 / SprintSpeed 22 / bunny ChaseSpeed 19).
 			PatrolSpeed = 11, -- ambling near its nest
 			InvestigateSpeed = 18, -- > WalkSpeed (runs down a walker who stays loud), < SprintSpeed (a sprinter gains)
-			LungeSpeed = 24, -- > SprintSpeed: unoutrunnable BY DESIGN, but sight-gated + short -> counter is "break sight"
+			LungeSpeed = 23, -- > SprintSpeed: unoutrunnable BY DESIGN, but sight-gated + short -> counter is "break sight" (was 24; ~2x the corner-escape window for kids, still > sprint 22)
 			-- Cap the monkey's hunt speed after the ramp: the LUNGE is meant to exceed sprint (sight-
 			-- gated + brief), but 24 x 1.475 = 35 is absurd; hold it to a tense-but-fair ceiling.
 			MaxHuntSpeed = 27, -- the lunge stays unoutrunnable but not teleporty at full aggression
@@ -702,8 +718,8 @@ Config.Noise = table.freeze({
 	WalkNoise = 0.35, -- noise at walk speed (BELOW HearThreshold 0.45 -> walking is safe)
 	CreepNoise = 0.1, -- noise while creeping
 	IdleNoise = 0.0, -- noise while still
-	RisePerSecond = 4.0, -- NoiseLevel rises toward target fast (sprinting is immediately loud)
-	DecayPerSecond = 1.3, -- and decays slowly (you must COMMIT to quiet to shed the monkey)
+	RisePerSecond = 3.0, -- NoiseLevel rises toward target fast (was 4.0; a panic-tap of the RUN button no longer instantly summons the monkey, a committed sprint still goes loud in ~0.3s)
+	DecayPerSecond = 1.7, -- and decays slowly (was 1.3; a kid who stops sprinting falls below the hear threshold sooner -- still a deliberate decay, quiet is still a commitment)
 	MaxPlausibleSpeed = 80, -- studs/s above which a position delta is a TELEPORT (respawn jump),
 	-- not real running -- such a tick is ignored for noise so a respawn can't spike NoiseLevel.
 	MaxTickDtFactor = 4, -- clamp a tick's dt to PollInterval*this so a server hitch can't snap the
@@ -711,7 +727,7 @@ Config.Noise = table.freeze({
 
 	-- HUD noise meter (NoiseMeterController) -- teaches the monkey's counter: a marker sits
 	-- at the monkey's HearThreshold, so the player SEES when they cross into "audible".
-	MeterWidth = 180, -- px
+	MeterWidth = 200, -- px (was 180: mirrors the wider battery/stamina gauges)
 	MeterHeight = 14, -- px
 	MeterMargin = 18, -- px from the screen corner (bottom-right, mirroring battery/stamina)
 	MeterBackColor = Color3.fromRGB(25, 25, 30),
@@ -768,6 +784,69 @@ Config.Decoy = table.freeze({
 	Label = "DECOY",
 })
 
+-- Flare: the dark-vs-light theme made a player VERB (light as a WEAPON) -----------------------------
+-- A throwable LIGHT burst that FREEZES any monster caught in its glow for a beat -- the universal
+-- "get it off me NOW" tool that works on BOTH monsters (the decoy only fools the near-blind monkey
+-- via noise; this PUSHES both off you). Server-authoritative + exploit-safe, modeled on the decoy:
+-- the client sends ONLY intent (no payload); the server computes the landing from the player's OWN
+-- known position+facing (never a client position), clamps it to the first wall, spawns a replicated
+-- burning flare, and blinds every rig within BlindRadius by writing the EXISTING MonsterStunnedUntil
+-- seam (the same one TrapService uses) -- so MonsterService needs ZERO changes. Balance-sensitive (a
+-- universal freeze): shipped on but tune Charges/Cooldown/BlindSeconds in a real playtest, like Downed.
+Config.Flare = table.freeze({
+	Enabled = true,
+	Charges = 2, -- flares per ROUND (server-authoritative; refilled on RoundReset; a death does NOT refund)
+	Cooldown = 12, -- seconds between throws even with charges left (server-authoritative)
+	IntentRateLimit = 0.25, -- min seconds between accepted ThrowFlare messages (anti-spam, HOSTILE input)
+
+	-- Throw geometry (reuses the decoy's clamp-to-first-wall model -> can't be aimed through geometry).
+	ThrowDistance = 12, -- studs ahead it lands (a PANIC toss: lands close so the BlindRadius 18 + LightRange 26 burst envelops the THROWER -- a monster ON you or just behind is frozen, the "get it off me NOW" case -- while the burst still reaches ~30 ahead to blind a chaser on a teammate)
+	WallPadding = 2.5, -- studs short of a hit wall it rests (never inside geometry)
+	LandingHeight = 0.6, -- studs above the floor it rests
+
+	-- The blind (monster-side; SPATIAL + server-authoritative; reuses the MonsterStunnedUntil seam).
+	BlindRadius = 18, -- studs: a rig within this of the ignited flare is frozen
+	BlindSeconds = 2.4, -- seconds a caught monster stands frozen (~ the trap's stun -- a real escape gap, never a kill)
+	IgniteDelay = 0.15, -- seconds after landing before it ignites + blinds (a travel beat; not telekinetic)
+	LifeSeconds = 6.0, -- seconds it keeps burning (a lingering light pool) then despawns
+	RepeatBlindInterval = 0.6, -- re-apply the blind each interval while burning, so a monster wandering INTO the pool is caught too
+
+	-- The flare part (server-spawned -> replicated; the whole lobby sees/hears it).
+	Size = Vector3.new(0.5, 0.5, 1.6),
+	Color = Color3.fromRGB(255, 240, 220),
+	Material = Enum.Material.Neon,
+	LightColor = Color3.fromRGB(255, 150, 90), -- hot red-orange road-flare glow
+	LightBrightness = 8, -- bright: the burst must beat the dark and read as a flash
+	LightRange = 26, -- studs the pool reaches (>= BlindRadius so the lit area shows the safe zone)
+	IgniteFlashBrightness = 16, -- brightness spike at ignition, eased back to LightBrightness over IgniteFlashSeconds
+	IgniteFlashSeconds = 0.35,
+	SparkTexture = "rbxasset://textures/particles/fire_main.dds", -- built-in particle texture (no upload)
+	SparkColor = Color3.fromRGB(255, 170, 90),
+	SparkRate = 28,
+	SparkSize = 1.1,
+	SparkLifetime = 0.7,
+
+	-- Audio (reuse already-verified free ids used elsewhere in Config -- no new uploads).
+	IgniteSoundId = "rbxassetid://9120188626", -- the verified whoosh/thunk (also Exit.OpenSound / Traps.FireId)
+	IgniteVolume = 0.8,
+	BurnSoundId = "rbxassetid://9125446564", -- the verified room-tone hum, looped (also Ambient.RoomTone)
+	BurnVolume = 0.4,
+	BurnPitch = 1.6, -- pitched up so the room-tone hum reads as a burning HISS, not HVAC
+	BurnRange = 40, -- studs RollOffMaxDistance for the 3D burn loop
+
+	-- Input.
+	ThrowKey = Enum.KeyCode.R, -- FREE (F light, Q decoy, E hide, Shift sprint, P settings, B shop)
+	GamepadThrowKey = Enum.KeyCode.ButtonR3, -- FREE (ButtonY light, X decoy, B hide, L3 sprint)
+
+	-- HUD / touch. Bottom-right thumb-stack ABOVE the HIDE button; bottom-left cooldown/charge chip
+	-- ABOVE the DECOY chip. (ButtonSize stays 100 so the 5-button stack RUN/LIGHT/DECOY/HIDE/FLARE
+	-- still fits a 768-tall iPad: FLARE top = 610 + 100 = 710 < 768.)
+	Label = "FLARE",
+	TouchBottomOffset = 610, -- px from the bottom (LIGHT 250 / RUN 130 / DECOY 370 / HIDE 490 -> FLARE 610)
+	ChipBottomOffset = 110, -- px the FLARE xN chip sits, above the DECOY chip (74) and the gauges
+	ButtonColor = Color3.fromRGB(255, 170, 90),
+})
+
 -- Traps: telegraphed hazards -----------------------------------------------------
 -- Server-authoritative floor traps (spatial, never Touched). Each is FAIR: an always-
 -- visible red arrow + faint glow telegraphs it, and entering it starts a short wind-up
@@ -776,7 +855,7 @@ Config.Decoy = table.freeze({
 -- so even surviving one can draw the monkey. The counter is simply: watch the floor.
 Config.Traps = table.freeze({
 	TriggerRadius = 4.5, -- studs: entering this of a Trap marker begins the wind-up
-	WindupSeconds = 1.2, -- the reaction window: long enough to SEE the flash and step off in time (was a too-fast 0.55)
+	WindupSeconds = 1.5, -- the reaction window: long enough to SEE the flash and step off in time (was 1.2; more reaction room on a touchscreen where eyes are on the monster behind you)
 	RearmSeconds = 3, -- seconds after firing/disarming before the trap can trigger again
 	NoiseOnTrigger = 1.0, -- spikes the victim's NoiseLevel when it fires (a sprung trap is LOUD)
 
@@ -919,10 +998,10 @@ Config.Environment = table.freeze({
 Config.Player = table.freeze({
 	WalkSpeed = 16, -- base move speed (Roblox default)
 	SprintSpeed = 22, -- move speed while sprinting with stamina remaining
-	StaminaMax = 4, -- seconds of sprint on a full bar
+	StaminaMax = 5, -- seconds of sprint on a full bar (was 4 -- kid mercy: a full corner-break burst)
 	StaminaDrain = 1, -- stamina seconds spent per real second while sprinting
-	StaminaRegen = 0.7, -- stamina seconds restored per real second while not sprinting
-	StaminaRegenDelay = 0.6, -- seconds after sprinting before stamina starts to regen
+	StaminaRegen = 0.9, -- stamina seconds restored per real second while not sprinting (was 0.7)
+	StaminaRegenDelay = 0.5, -- seconds after sprinting before stamina starts to regen (was 0.6)
 	SprintKey = Enum.KeyCode.LeftShift,
 	GamepadSprintKey = Enum.KeyCode.ButtonL3, -- gamepad: click the left stick to sprint (bound alongside SprintKey)
 	IntentRateLimit = 0.08, -- min seconds between accepted SprintIntent messages (anti-spam)
@@ -1000,13 +1079,16 @@ Config.Onboarding = table.freeze({
 -- movement thumbstick (bottom-left). Drop a real icon into `*IconImage` later.
 Config.TouchControls = table.freeze({
 	ButtonSize = 100, -- px square tap target
-	EdgeMargin = 26, -- px from the right edge
+	EdgeMargin = 30, -- px from the right edge (was 26; clears the iPad rounded-corner safe area)
 	FlashlightBottomOffset = 250, -- px from the bottom (sits above the jump button)
 	SprintBottomOffset = 130, -- px from the bottom (closest to the thumb, below the flashlight)
 	BackgroundColor = Color3.fromRGB(18, 20, 26),
-	BackgroundTransparency = 0.3,
+	BackgroundTransparency = 0.12, -- was 0.3: more opaque so the dark buttons are findable over a dark corridor
 	TextColor = Color3.fromRGB(245, 240, 230),
-	TextSize = 19,
+	TextSize = 22, -- was 19: bigger labels for young readers on an iPad at arm's length
+	RingThickness = 4, -- px accent ring around each circular touch button (was a hardcoded 3 in every touch controller -- now Config-driven)
+	PressScale = 0.9, -- a touch button scale-punches to this on tap, then springs back (tactile feedback kids can SEE)
+	PressReturnSeconds = 0.18, -- seconds the press-punch eases back to 1x
 	FlashlightOnColor = Color3.fromRGB(245, 222, 120), -- ring tint while the light is ON
 	FlashlightOffColor = Color3.fromRGB(140, 142, 150), -- ...and while OFF
 	FlashlightLabel = "LIGHT",
@@ -1560,6 +1642,7 @@ Config.Hiding = table.freeze({
 	DiscoverRadius = 9, -- studs: a HUNTING monster this close to your spot begins to find you
 	DiscoverSeconds = 2.5, -- seconds a hunter lingers within DiscoverRadius before it FLUSHES you out
 	FlushGraceSeconds = 0.6, -- a beat of RespawnGrace on a flush so being found isn't an instant grab
+	MaxTickDtFactor = 4, -- clamp the discover poll's dt to PollInterval*this so a server hitch can't snap discoverTime past DiscoverSeconds in one tick (mirrors Noise / Monster.Shared / Downed)
 
 	-- HUD (HideController, render-only): a prompt when near a usable spot + the hidden overlay.
 	PromptText = "HIDE", -- the "press E to HIDE" affordance shown near a spot

@@ -46,6 +46,7 @@ local function eligible(player: Player): boolean
 	return player:GetAttribute(Attributes.InSafeRoom) ~= true
 		and player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 		and player:GetAttribute(Attributes.Downed) ~= true
+		and player:GetAttribute(Attributes.Hidden) ~= true -- ducked in a hiding spot: don't taunt them
 end
 
 -- Per-player check, factored out so it can be pcall-isolated: a throw on one player (HRP

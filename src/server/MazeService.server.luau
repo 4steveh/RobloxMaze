@@ -225,7 +225,7 @@ buildLights()
 -- be walled off by a raising wall on some random rounds (a silent, round-dependent break). We can't
 -- auto-fix placed content, but we WARN loudly so it's caught before publish, not in a playtest.
 local function validateMarkers()
-	for _, tag in ipairs({ Tags.KeySpot, Tags.Trap, Tags.MonkeySpawn, Tags.PatrolPoint }) do
+	for _, tag in ipairs({ Tags.KeySpot, Tags.Trap, Tags.MonkeySpawn, Tags.PatrolPoint, Tags.AmbushNode }) do
 		for _, marker in ipairs(CollectionService:GetTagged(tag)) do
 			if marker:IsA("BasePart") then
 				local p = marker.Position
