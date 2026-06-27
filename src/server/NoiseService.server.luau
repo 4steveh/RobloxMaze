@@ -49,6 +49,7 @@ local function isSilenced(player: Player): boolean
 		or player:GetAttribute(Attributes.GameState) == Enums.GameState.Won
 		or player:GetAttribute(Attributes.RespawnGrace) == true
 		or player:GetAttribute(Attributes.Downed) == true -- a downed player makes no controllable noise
+		or player:GetAttribute(Attributes.Hidden) == true -- tucked in a locker: silent, like a SafeRoom (MonsterService already skips Hidden; this keeps the NoiseMeter honest)
 end
 
 local function onPlayerAdded(player: Player)

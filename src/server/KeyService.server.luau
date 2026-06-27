@@ -215,6 +215,20 @@ end
 
 local function spawnRoundKeys()
 	local ordered = orderedKeySpots()
+	-- Safety net (C-1): the avoidance/occupancy filtering must NEVER leave fewer eligible spots than
+	-- the keys needed to win, or the exit could never open -- a silently UNWINNABLE round that only
+	-- ends on the MaxRoundSeconds timeout, with no feedback. If it has, RELAX the filter: fall back to
+	-- the full (still randomized) KeySpot set so at least RequiredToWin keys always spawn.
+	if #ordered < Config.Keys.RequiredToWin then
+		local all = {}
+		for _, marker in Discovery.getAll(Tags.KeySpot) do
+			if marker:IsA("BasePart") then
+				table.insert(all, marker)
+			end
+		end
+		shuffleInPlace(all)
+		ordered = all
+	end
 	local count = math.min(Config.Keys.SpawnPerRound, #ordered)
 	for i = 1, count do
 		makeKey(ordered[i].Position)
@@ -264,6 +278,27 @@ end
 Players.PlayerAdded:Connect(onPlayerAdded)
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
+end
+
+-- Startup sanity (C-1): if the level carries fewer KeySpot markers than the keys RequiredToWin, the
+-- exit can NEVER open -- warn loudly once at boot so it's caught here, not discovered as a silently
+-- unwinnable round. (spawnRoundKeys still spawns as many keys as it can from whatever spots exist.)
+do
+	local keySpotCount = 0
+	for _, marker in Discovery.getAll(Tags.KeySpot) do
+		if marker:IsA("BasePart") then
+			keySpotCount += 1
+		end
+	end
+	if keySpotCount < Config.Keys.RequiredToWin then
+		warn(
+			"[KeyService] Only",
+			keySpotCount,
+			"KeySpot markers found but RequiredToWin =",
+			Config.Keys.RequiredToWin,
+			"-- the round may be UNWINNABLE. Place more KeySpot markers."
+		)
+	end
 end
 
 spawnRoundKeys()

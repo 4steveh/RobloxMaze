@@ -18,6 +18,7 @@ local Remotes = require(ReplicatedStorage.Remotes)
 local Attributes = require(ReplicatedStorage.Attributes)
 local Tags = require(ReplicatedStorage.Tags)
 local Discovery = require(ReplicatedStorage.Discovery)
+local Spatial = require(ReplicatedStorage.Spatial)
 
 local H = Config.Hiding
 local TC = Config.TouchControls
@@ -119,6 +120,24 @@ if UserInputService.TouchEnabled then
 	btn.Parent = gui
 end
 
+-- Conceal YOUR OWN body while hidden (view-only): you were left standing visibly inside the locker, so
+-- you saw your own character clipping the cabinet. Drive LocalTransparencyModifier (a CLIENT-only,
+-- non-replicated property -- teammates still see you tucked in the locker) so YOU don't. The engine's
+-- third-person camera fade can reset this, so re-assert it every frame while hidden and clear it once
+-- on the way out (clearing every frame would disable the normal camera-zoom fade when not hidden).
+local function setLocalConceal(value: number)
+	local character = player.Character
+	if not character then
+		return
+	end
+	for _, d in character:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = value
+		end
+	end
+end
+local wasConcealed = false
+
 -- Drive the two tells each frame. The HIDDEN overlay takes over while hidden; otherwise the prompt
 -- appears whenever a HidingSpot is within EnterRadius (cosmetic proximity -- the server re-validates).
 RunService.RenderStepped:Connect(function()
@@ -126,7 +145,12 @@ RunService.RenderStepped:Connect(function()
 	hidden.Visible = isHidden
 	if isHidden then
 		prompt.Visible = false
+		setLocalConceal(H.HiddenLocalTransparency)
+		wasConcealed = true
 		return
+	elseif wasConcealed then
+		setLocalConceal(0) -- restore once: you popped out of the locker
+		wasConcealed = false
 	end
 
 	local character = player.Character
@@ -137,7 +161,7 @@ RunService.RenderStepped:Connect(function()
 	end
 	local near = false
 	for _, spot in Discovery.getAll(Tags.HidingSpot) do
-		if spot:IsA("BasePart") and (spot.Position - hrp.Position).Magnitude <= H.EnterRadius then
+		if spot:IsA("BasePart") and Spatial.distanceToPart(hrp.Position, spot) <= H.EnterRadius then
 			near = true
 			break
 		end

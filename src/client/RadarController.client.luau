@@ -1,6 +1,6 @@
 --!nonstrict
 -- RadarController.client.luau
--- A compact monster RADAR (top-right): YOU at the center, a blip per monster placed by its
+-- A compact monster RADAR (top-left): YOU at the center, a blip per monster placed by its
 -- camera-relative BEARING and clamped DISTANCE (forward = up). Blips are tinted by SPECIES
 -- (red bunny / yellow monkey, mirroring their eye-glow tells) and made prominent by THREAT:
 -- a hunting monster (Chase/Investigate/Alert) is bright + full size, a patrolling one is faint
@@ -28,12 +28,12 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = false -- sit below the Roblox topbar
 gui.Parent = playerGui
 
--- The radar dish (top-right, pushed down by TopOffset so it clears the now-populated Roblox
--- player list -- which also lives top-right since PlayerData mirrors Coins + Escapes to leaderstats).
+-- The radar dish (top-left, pushed down to 210px so it sits BELOW the gear + SHOP buttons and
+-- clears the bottom-right touch-button column + the Roblox player list, which both live right).
 local dish = Instance.new("Frame")
 dish.Name = "Dish"
-dish.AnchorPoint = Vector2.new(1, 0)
-dish.Position = UDim2.new(1, -R.Margin, 0, R.Margin + R.TopOffset)
+dish.AnchorPoint = Vector2.new(0, 0)
+dish.Position = UDim2.fromOffset(R.Margin, 210)
 dish.Size = UDim2.fromOffset(R.Size, R.Size)
 dish.BackgroundColor3 = R.BackgroundColor
 dish.BackgroundTransparency = R.BackgroundTransparency
@@ -80,8 +80,8 @@ sweepArm.Parent = dish
 -- Label sits ABOVE the dish; the dish clips its own descendants, so parent the label to the gui.
 local label = Instance.new("TextLabel")
 label.Name = "Label"
-label.AnchorPoint = Vector2.new(1, 1)
-label.Position = UDim2.new(1, -R.Margin, 0, R.Margin + R.TopOffset) -- ride down with the dish
+label.AnchorPoint = Vector2.new(0, 1)
+label.Position = UDim2.fromOffset(R.Margin, 210) -- sit just above the top-left dish
 label.Size = UDim2.fromOffset(R.Size, 14)
 label.BackgroundTransparency = 1
 label.Font = Config.UI.SubheadingFont

@@ -188,24 +188,43 @@ local function buildLights()
 	for r = 0, M.Rows - 1 do
 		for c = 0, M.Cols - 1 do
 			if (c + r) % L.CellStride == 0 then -- a spread subset of centres (a diagonal grid, not clusters)
-				local bulb = Instance.new("Part")
-				bulb.Name = `ML_{c}_{r}`
-				bulb.Anchored = true
-				bulb.CanCollide = false
-				bulb.CanQuery = false
-				bulb.CanTouch = false
-				bulb.Size = Vector3.new(L.FixtureSize, L.FixtureSize, L.FixtureSize)
-				bulb.Material = Enum.Material.Neon
-				bulb.Color = L.FixtureColor -- the dark fixture housing; the PointLight throws the warm pool
-				bulb.Position = cellCenter(c, r) + Vector3.new(0, L.HangHeight, 0)
-				bulb.Parent = folder
+				local mount = cellCenter(c, r) + Vector3.new(0, L.CeilingY, 0)
+
+				-- The dark housing BODY (recessed into the ceiling). Named ML_ so folder scans still
+				-- find each fixture by that prefix; the visible light is the bright panel below it.
+				local housing = Instance.new("Part")
+				housing.Name = `ML_{c}_{r}`
+				housing.Anchored = true
+				housing.CanCollide = false
+				housing.CanQuery = false
+				housing.CanTouch = false
+				housing.Material = Enum.Material.Metal
+				housing.Color = L.FixtureColor -- a dark frame around the bright panel
+				housing.Size = Vector3.new(L.PanelSize.X + L.HousingPad * 2, 0.3, L.PanelSize.Z + L.HousingPad * 2)
+				housing.Position = mount + Vector3.new(0, 0.12, 0) -- tucked up into the ceiling underside
+				housing.Parent = folder
+
+				-- The bright emissive PANEL -- THIS is what reads as "a light" (vs the old dark cube
+				-- that looked like a floating black square). The FlickerController dims it in lockstep
+				-- with its PointLight, so a failing tube's glow and its pool stutter together.
+				local panel = Instance.new("Part")
+				panel.Name = "Panel"
+				panel.Anchored = true
+				panel.CanCollide = false
+				panel.CanQuery = false
+				panel.CanTouch = false
+				panel.Material = Enum.Material.Neon
+				panel.Color = L.Color
+				panel.Size = L.PanelSize
+				panel.Position = mount - Vector3.new(0, 0.04, 0) -- the lit face just below the housing
+				panel.Parent = housing
 
 				local light = Instance.new("PointLight")
 				light.Color = L.Color
 				light.Brightness = L.Brightness
 				light.Range = L.Range
 				light.Shadows = L.Shadows -- a wash, not a caster (perf + reliable on mobile)
-				light.Parent = bulb
+				light.Parent = panel
 
 				-- The FlickerController animates the LIGHT instances tagged FlickerLight, so the tag goes
 				-- on the PointLight (not the bulb part); the untagged remainder burn steady.

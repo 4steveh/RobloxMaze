@@ -24,16 +24,21 @@ local ambushRemote = Remotes.get(Remotes.Names.AmbushTriggered)
 local monsterBus = AudioGroups.get("Monster") -- a skitter is a creature sound, not generic SFX
 local C = Config.Ambush
 
--- Personal comfort pref (client-local attribute from SettingsController; render-only, no server
+-- Personal comfort prefs (client-local attributes from SettingsController; render-only, no server
 -- trust), cached + refreshed on change. A light cut is a brief flash, so ReduceFlashing suppresses
 -- the cut; the spatialized skitter still plays (audio is left to the master-volume setting).
+-- FxIntensity at 0 means "no FX" -- it suppresses the cut entirely (the skitter still plays).
 local reduceFlashing = Config.Settings.DefaultReduceFlashing
+local fxIntensity = Config.Settings.DefaultFxIntensity
 local function refreshPrefs()
 	local rf = player:GetAttribute(Attributes.SettingReduceFlashing)
 	reduceFlashing = if typeof(rf) == "boolean" then rf else Config.Settings.DefaultReduceFlashing
+	local fx = player:GetAttribute(Attributes.SettingFxIntensity)
+	fxIntensity = if typeof(fx) == "number" then fx else Config.Settings.DefaultFxIntensity
 end
 refreshPrefs()
 player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshPrefs)
+player:GetAttributeChangedSignal(Attributes.SettingFxIntensity):Connect(refreshPrefs)
 
 -- The 3D skitter: parent the Sound to a temporary anchored invisible part at the node so it
 -- distance-attenuates (spatializes) instead of thunking at full volume in every ear. The carrier
@@ -67,10 +72,12 @@ end
 -- Briefly cut the nearest FlickerLight fixture to the scare. FlickerLight is tagged on the LIGHT
 -- itself (see FlickerController), so GetTagged returns Lights -- we measure distance via each
 -- light's parent BasePart, kill the winner's Enabled, then restore it after the cut window.
--- FlickerController only writes Brightness, so toggling Enabled never fights it.
+-- FlickerController only writes Brightness, so toggling Enabled never fights it. The cut is BOUND
+-- to SkitterRange (same radius as the audible scare) so an off-screen fixture across the map can
+-- never black out -- only a fixture near the node (the player's own corridor) blinks.
 local function cutNearestLight(position: Vector3)
-	if reduceFlashing then
-		return -- a cut is a flash -- honour the comfort setting
+	if reduceFlashing or fxIntensity <= 0 then
+		return -- a cut is a flash -- honour the comfort settings
 	end
 	local nearestLight, nearestDist = nil, math.huge
 	for _, light in CollectionService:GetTagged(Tags.FlickerLight) do
@@ -83,7 +90,7 @@ local function cutNearestLight(position: Vector3)
 			end
 		end
 	end
-	if nearestLight then
+	if nearestLight and nearestDist <= C.SkitterRange then
 		nearestLight.Enabled = false
 		task.delay(C.LightCutSeconds, function()
 			if nearestLight.Parent then

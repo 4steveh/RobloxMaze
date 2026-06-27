@@ -154,7 +154,7 @@ player:GetAttributeChangedSignal(Attributes.EquippedFlashlightColor):Connect(app
 -- Extra flicker when a HUNTING monster is near: returns 0..1 (subtracted from beam
 -- brightness). A fear beat + a tell that something is on you. Reads only replicated rig
 -- State + position (exploit-safe), same as ChaseFXController. 0 when nothing hunts.
-local function monsterProximityFlicker()
+local function monsterProximityFlicker(dt)
 	local FL = Config.Flashlight
 	if FL.MonsterFlickerMaxScale <= 0 then
 		return 0
@@ -184,7 +184,8 @@ local function monsterProximityFlicker()
 	end
 	-- An erratic stutter that deepens with closeness (an occasional harder dropout).
 	local osc = 0.5 + 0.5 * math.sin(os.clock() * FL.MonsterFlickerSpeed)
-	local dropout = if math.random() < 0.1 * threat then 1 else 0
+	-- dt-normalized so the stutter RATE is FPS-independent (same look at 60Hz and 120Hz).
+	local dropout = if math.random() < 1 - math.exp(-FL.MonsterFlickerDropoutRate * threat * dt) then 1 else 0
 	return math.clamp(threat * FL.MonsterFlickerMaxScale * (0.55 * osc + 0.6 * dropout), 0, 0.95)
 end
 
@@ -373,7 +374,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 				local scale = Config.Flashlight.LowBatteryMinBrightnessScale
 				flicker *= scale + (1 - scale) * wave
 			end
-			flicker *= 1 - monsterProximityFlicker()
+			flicker *= 1 - monsterProximityFlicker(deltaTime)
 			brightness *= applyFlickerPrefs(flicker)
 			light.Brightness = brightness
 		end

@@ -90,7 +90,7 @@ header.Parent = panel
 
 local balance = Instance.new("TextLabel")
 balance.AnchorPoint = Vector2.new(1, 0)
-balance.Position = UDim2.new(1, -52, 0, 14)
+balance.Position = UDim2.new(1, -64, 0, 14) -- nudged left to clear the enlarged close-X
 balance.Size = UDim2.fromOffset(120, 24)
 balance.BackgroundTransparency = 1
 balance.Font = Config.UI.HeadingFont
@@ -102,11 +102,11 @@ balance.Parent = panel
 
 local closeBtn = Instance.new("TextButton")
 closeBtn.AnchorPoint = Vector2.new(1, 0)
-closeBtn.Position = UDim2.new(1, -14, 0, 12)
-closeBtn.Size = UDim2.fromOffset(28, 28)
+closeBtn.Position = UDim2.new(1, -12, 0, 6)
+closeBtn.Size = UDim2.fromOffset(42, 42) -- ~44px comfortable tap target (kids/iPad)
 closeBtn.BackgroundColor3 = Config.UI.PanelColor
 closeBtn.Font = Config.UI.SubheadingFont
-closeBtn.TextSize = 18
+closeBtn.TextSize = 22
 closeBtn.TextColor3 = Config.UI.TextColor
 closeBtn.Text = "X"
 local cbCorner = Instance.new("UICorner")
