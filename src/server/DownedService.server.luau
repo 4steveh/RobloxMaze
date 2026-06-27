@@ -44,7 +44,7 @@ end
 -- Immobilize by ANCHORING the root, NOT PlatformStand. PlatformStand ragdolls the body:
 -- it drops the HRP ~2 studs and can clip through the floor, which players read as "fell
 -- through the map" (black screen) while being unable to move. Anchoring freezes the
--- character exactly in place, upright, with no physics, so it can never clip or fall.
+-- character exactly in place, collapsed, with no physics, so it can never clip or fall.
 -- WalkSpeed/Jump are also zeroed (SprintService skips downed players, so it never fights this).
 local function down(player, species)
 	local character = player.Character
@@ -57,6 +57,10 @@ local function down(player, species)
 	setAttrs(player, true, 0)
 	player:SetAttribute(Attributes.DownedUntil, Workspace:GetServerTimeNow() + D.BleedoutSeconds)
 	if hrp then
+		-- Slump the body into a collapsed kneel BEFORE anchoring: lower it by DownDrop and
+		-- pitch it forward by DownPitch (keeping yaw), so a downed player reads as collapsed
+		-- rather than a frozen standing mannequin. Still ANCHOR (never PlatformStand — see above).
+		hrp.CFrame = (hrp.CFrame - Vector3.new(0, D.DownDrop, 0)) * CFrame.Angles(-D.DownPitch, 0, 0)
 		hrp.Anchored = true
 	end
 	humanoid.WalkSpeed = 0

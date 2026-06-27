@@ -57,6 +57,7 @@ end
 local function eligible(player: Player): boolean
 	return player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 		and player:GetAttribute(Attributes.Downed) ~= true
+		and player:GetAttribute(Attributes.Hidden) ~= true -- can't throw from inside a locker (would betray the hiding spot)
 end
 
 -- Where the flare lands: ThrowDistance ahead along the player's flat facing, CLAMPED to the first wall

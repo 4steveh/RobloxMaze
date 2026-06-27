@@ -53,6 +53,7 @@ Config.Flashlight = table.freeze({
 	MonsterFlickerStartDistance = 28, -- studs: only a CLOSE hunter stutters the beam (was too eager at 40)
 	MonsterFlickerMaxScale = 0.28, -- max fraction of brightness the stutter can subtract: a fear beat, never a blackout
 	MonsterFlickerSpeed = 27, -- rad/s of the stutter oscillation
+	MonsterFlickerDropoutRate = 6.0, -- per-second rate the beam drops toward dark near a hunter; the controller dt-normalizes it (replaces an FPS-dependent per-frame 0.1*threat)
 
 	-- Volumetric beam SHAFT (render-only, client): a faint cone of light riding the SpotLight, so
 	-- sweeping the flashlight reads as a physical shaft cutting the dark (together with the dust motes
@@ -135,7 +136,7 @@ Config.Spatial = table.freeze({
 Config.Respawn = table.freeze({
 	AtCheckpoint = true, -- respawn at the last SafeRoom checkpoint (vs. always the PlayerStart marker)
 	KeepKeysOnDeath = true, -- keep collected keys through death
-	SpawnUpOffset = 5, -- studs the player's hidden SpawnLocation sits above its marker, so the character spawns clear of the floor
+	SpawnUpOffset = 2, -- studs the player's hidden SpawnLocation sits above its marker, just clear of the floor so the character settles onto the pad (was 5 -> a noticeable drop-plop)
 	RespawnDelay = 3, -- seconds between death and respawn (also the window for the upcoming death/jumpscare beat)
 	InvulnSeconds = 3, -- seconds of server-authoritative invulnerability after (re)spawn: the monster ignores the player (no instant re-kill)
 })
@@ -166,6 +167,8 @@ Config.Downed = table.freeze({
 	ReviveDecayScale = 1.5, -- revive progress drains at this × the fill rate when no rescuer is near
 	ReviveGraceSeconds = 3, -- seconds of monster-ignore invulnerability right after a revive
 	MaxTickDtFactor = 4, -- clamp the revive/decay poll's dt to PollInterval*this so a server hitch (e.g. a ComputeAsync stall) can't snap revive progress past its threshold in one tick (mirrors Noise / Monster.Shared)
+	DownPitch = 1.15, -- radians the downed body pitches forward into a collapsed slump (not a frozen upright mannequin)
+	DownDrop = 1.0, -- studs the downed body lowers as it slumps
 
 	-- Downed/revive HUD (DownedController; render-only) ---------------------------
 	OverlayColor = Color3.fromRGB(45, 0, 0), -- the downed-screen wash
@@ -266,14 +269,19 @@ Config.Maze = table.freeze({
 	Lighting = table.freeze({
 		Enabled = true,
 		CellStride = 3, -- a fixture roughly every Nth cell (placed where (c + r) % stride == 0 -> a spread grid, not clusters)
-		HangHeight = 11, -- studs above the floor the fixture hangs (just under the 14-tall ceiling line)
-		Color = Color3.fromRGB(255, 244, 214), -- a warm dim bulb (vs the cold ambient -> a hearth-ish pool)
-		Brightness = 1.4, -- modest: a pool, not daylight (and the flicker dips it further)
-		Range = 18, -- studs the pool reaches (overlaps a bit cell-to-cell so corridors aren't pitch black between)
+		-- A flush RECESSED ceiling fixture (a bright emissive PANEL set in a dark housing) mounts just
+		-- under the maze ceiling, so corridors read as a LIT BUILDING -- not a dark cube floating in
+		-- mid-air (the old look, which read as an unfinished glitch). The PointLight throws the warm
+		-- pool; the panel + housing give the source a finished body you can look up at.
+		CeilingY = 13.9, -- world Y the fixture mounts at (just under MazeCeiling's underside at Y14)
+		Color = Color3.fromRGB(255, 240, 205), -- warm bulb tone (the emissive panel AND the light pool)
+		Brightness = 1.9, -- the pool brightness (raised: the fixture now mounts at the ceiling, farther from the floor than the old Y11)
+		Range = 24, -- studs the pool reaches (raised with the higher mount so the floor stays lit and pools overlap)
 		Shadows = false, -- a wash, not a caster (perf + reliable on mobile, like the SafeRoom/key lights)
-		FixtureSize = 0.7, -- studs: a small emissive bulb part the light hangs on
-		FixtureColor = Color3.fromRGB(36, 34, 30), -- the dark housing around the bulb
-		FlickerFraction = 0.5, -- this fraction of fixtures get the FlickerLight tag (the rest burn steady)
+		PanelSize = Vector3.new(2.8, 0.18, 1.0), -- the emissive lit panel (a fluorescent-tube footprint)
+		HousingPad = 0.45, -- studs the dark housing frame extends beyond the panel on each side
+		FixtureColor = Color3.fromRGB(28, 27, 24), -- the dark housing around the bright panel
+		FlickerFraction = 0.3, -- fraction of fixtures that get the FlickerLight tag (was 0.5 -> ~24 flickering; now ~12, so it reads as a few failing tubes, not a maze-wide strobe)
 	}),
 })
 
@@ -444,6 +452,7 @@ Config.HUD = table.freeze({
 	-- bloom -> the overlay eases in -> the icon pops with an overshoot -> the label rises in)
 	-- rather than a hard Visible flip. Render-only; the win jingle already lands via StingerController.
 	WinFlashColor = Color3.fromRGB(236, 255, 242), -- the relief bloom that washes in then clears
+	WinFlashPeak = 0.72, -- most-opaque alpha of the win bloom (was a hard 100%-opaque white flash that ignored REDUCE-FLASHING)
 	WinFlashSeconds = 0.55, -- seconds the bloom takes to fade to clear
 	WinOverlayFadeSeconds = 0.6, -- seconds the dark overlay eases in (under the bloom)
 	WinIconPopSeconds = 0.55, -- seconds the escaped icon scales up (Back overshoot from 0)
@@ -728,7 +737,7 @@ Config.Noise = table.freeze({
 	-- HUD noise meter (NoiseMeterController) -- teaches the monkey's counter: a marker sits
 	-- at the monkey's HearThreshold, so the player SEES when they cross into "audible".
 	MeterWidth = 200, -- px (was 180: mirrors the wider battery/stamina gauges)
-	MeterHeight = 14, -- px
+	MeterHeight = 18, -- px (was 14: a taller bar for iPad legibility)
 	MeterMargin = 18, -- px from the screen corner (bottom-right, mirroring battery/stamina)
 	MeterBackColor = Color3.fromRGB(25, 25, 30),
 	MeterQuietColor = Color3.fromRGB(110, 200, 120), -- fill while inaudible (safe)
@@ -738,7 +747,7 @@ Config.Noise = table.freeze({
 	-- A tiny caption pinned over the threshold marker so the line's MEANING is explicit: cross it and
 	-- the monkey can hear you. Teaches the noise counter at the HUD element itself (not only via a tip).
 	MeterThresholdLabel = "MONKEY HEARS", -- centered over the marker line
-	MeterThresholdLabelSize = 10, -- px
+	MeterThresholdLabelSize = 13, -- px (was 10: bigger threshold caption for iPad legibility)
 })
 
 -- Noise DECOY: noise as a WEAPON, not just a liability (the Granny lesson) ----------
@@ -778,7 +787,7 @@ Config.Decoy = table.freeze({
 	RattleRange = 70, -- studs RollOffMaxDistance (it should read from a distance -- that's the point)
 
 	-- On-screen touch button (mobile), stacked above the RUN/LIGHT buttons.
-	TouchBottomOffset = 370, -- px from the bottom (above LIGHT at 250)
+	TouchBottomOffset = 368, -- px from the bottom (above LIGHT at 262, in the re-spaced right-edge stack)
 	ChipBottomOffset = 74, -- px from the bottom the cooldown chip sits (ABOVE the battery+stamina gauges, not over them)
 	ButtonColor = Color3.fromRGB(220, 210, 120),
 	Label = "DECOY",
@@ -839,10 +848,10 @@ Config.Flare = table.freeze({
 	GamepadThrowKey = Enum.KeyCode.ButtonR3, -- FREE (ButtonY light, X decoy, B hide, L3 sprint)
 
 	-- HUD / touch. Bottom-right thumb-stack ABOVE the HIDE button; bottom-left cooldown/charge chip
-	-- ABOVE the DECOY chip. (ButtonSize stays 100 so the 5-button stack RUN/LIGHT/DECOY/HIDE/FLARE
-	-- still fits a 768-tall iPad: FLARE top = 610 + 100 = 710 < 768.)
+	-- ABOVE the DECOY chip. (Re-spaced ButtonSize 90 so the 5-button stack RUN/LIGHT/DECOY/HIDE/FLARE
+	-- still fits a 768-tall iPad below the player list: FLARE top = 580 + 90 = 670 < 768.)
 	Label = "FLARE",
-	TouchBottomOffset = 610, -- px from the bottom (LIGHT 250 / RUN 130 / DECOY 370 / HIDE 490 -> FLARE 610)
+	TouchBottomOffset = 580, -- px from the bottom (RUN 156 / LIGHT 262 / DECOY 368 / HIDE 474 -> FLARE 580)
 	ChipBottomOffset = 110, -- px the FLARE xN chip sits, above the DECOY chip (74) and the gauges
 	ButtonColor = Color3.fromRGB(255, 170, 90),
 })
@@ -906,7 +915,14 @@ Config.Traps = table.freeze({
 -- this is just the cosmetic tell it also builds on boot (one SelectionBox + one PointLight per room).
 Config.SafeRoom = table.freeze({
 	OutlineColor = Color3.fromRGB(90, 220, 130), -- calm green: the inverse of the trap's red
-	OutlineTransparency = 0.4,
+	OutlineTransparency = 0.35, -- the floor-border strips' neon alpha
+	-- The sanctuary was marked with a full-VOLUME SelectionBox -- a green wireframe CAGE whose top edges
+	-- floated in mid-air, reading as leftover dev/debug art. It's now a glowing green FLOOR BORDER traced
+	-- around the room's base (a "safe zone painted on the ground"), the literal green twin of the trap's
+	-- red floor pad. Finished, readable down a dark hall, and never a floating box.
+	TrimThickness = 0.5, -- studs: width of each green floor-border strip
+	TrimHeight = 0.16, -- studs tall: a flat strip lying ON the floor (a glowing line, not a wall)
+	TrimRaise = 0.09, -- studs the strip sits above the floor so it doesn't z-fight it
 	GlowColor = Color3.fromRGB(120, 230, 150),
 	GlowBrightness = 1.1, -- a gentle inviting glow (not a beacon -- it shouldn't outshine the keys/exit)
 	GlowRange = 20,
@@ -916,11 +932,18 @@ Config.SafeRoom = table.freeze({
 -- Only the FLICKER animation tunables the FlickerController reads live here. The
 -- static place lighting (Lighting service, Atmosphere, ColorCorrection) is content
 -- saved on the place, not Config -- those aren't numbers any logic reads.
+-- The flicker was reading as a "flashing walls" GLITCH, not atmosphere: a deep dip (floor 0.35) plus
+-- frequent full blackouts (0.015/frame ≈ ~1 cut per light per second) across ~24 fixtures meant
+-- something in view was strobing constantly. Retuned to an OCCASIONAL failing-fluorescent: a gentler
+-- dip, ~4× rarer + shorter cuts, fewer flickering fixtures (Config.Maze.Lighting.FlickerFraction),
+-- and the FlickerController now honours REDUCE-FLASHING (steady shimmer, no cuts) + FX-intensity.
 Config.Lighting = table.freeze({
-	FlickerSpeed = 11, -- base oscillation speed (rad/s) of a flickering fixture
-	FlickerMinScale = 0.35, -- brightness floor as a fraction of the fixture's base brightness
-	FlickerOffChance = 0.015, -- per-frame chance a fixture briefly cuts out entirely
-	FlickerOffTime = 0.12, -- seconds a fixture stays cut out
+	FlickerSpeed = 9, -- base oscillation speed (rad/s) of a flickering fixture (was 11 -- a touch slower, less buzzy)
+	FlickerMinScale = 0.55, -- brightness floor as a fraction of base (was 0.35 -- a gentle dip, not a deep strobe)
+	FlickerOffChance = 0.0035, -- per-frame chance a fixture briefly cuts out (was 0.015 -- ~4× rarer: a rare stutter, not a maze-wide strobe)
+	FlickerOffTime = 0.08, -- seconds a fixture stays cut out (was 0.12 -- a quick stutter)
+	PanelDimMax = 0.78, -- a flickering fixture's emissive PANEL fades to this transparency at a full cut, so the visible tube tracks its light pool
+	ReduceFlashingMinScale = 0.84, -- REDUCE-FLASHING on: a shallow STEADY shimmer between this and 1.0 with NO blackouts (photosensitivity-safe)
 })
 
 -- Environment / atmosphere (the mood foundation, reproduced FROM CODE) ------------
@@ -1045,7 +1068,7 @@ Config.Onboarding = table.freeze({
 	-- Just-in-time tips (TutorialController): each shown ONCE, the first time you actually
 	-- face that threat, so the COUNTER is taught in the moment rather than in an up-front wall
 	-- of text (Roblox's own FTUE guidance). Driven by the MonsterStateChanged remote.
-	ChaseTip = "RUN!  Hold Shift to sprint and break line of sight",
+	ChaseTip = "RUN — break their line of sight!  (the MONKEY hears sprinting, so go quiet once you're out of sight)", -- species-neutral: sprinting is the WRONG counter vs the noise monkey (loud + slower than its lunge)
 	AlertTip = "It HEARD you — move quietly, or throw a DECOY (Q) to send it the wrong way",
 	-- Shown the first time you approach a floor trap, BEFORE you can step on it blind. Teaches
 	-- BOTH halves of the new trap design: avoid them yourself, but bait a chasing monster across one.
@@ -1078,10 +1101,13 @@ Config.Onboarding = table.freeze({
 -- They stack bottom-RIGHT above Roblox's built-in jump button without overlapping it or the
 -- movement thumbstick (bottom-left). Drop a real icon into `*IconImage` later.
 Config.TouchControls = table.freeze({
-	ButtonSize = 100, -- px square tap target
+	-- The right-edge stack was re-spaced (smaller buttons + new offsets, step ~106) so the 5 buttons
+	-- RUN 156 / LIGHT 262 / DECOY 368 / HIDE 474 / FLARE 580 clear the iPad jump button at the BOTTOM
+	-- and the player list at the TOP; the monster radar moved to the top-LEFT to free that corner.
+	ButtonSize = 90, -- px square tap target (was 100: smaller so the full right-edge stack fits between the jump button and the player list)
 	EdgeMargin = 30, -- px from the right edge (was 26; clears the iPad rounded-corner safe area)
-	FlashlightBottomOffset = 250, -- px from the bottom (sits above the jump button)
-	SprintBottomOffset = 130, -- px from the bottom (closest to the thumb, below the flashlight)
+	FlashlightBottomOffset = 262, -- px from the bottom (was 250; re-spaced above RUN, below DECOY)
+	SprintBottomOffset = 156, -- px from the bottom (was 130; closest to the thumb, below the flashlight)
 	BackgroundColor = Color3.fromRGB(18, 20, 26),
 	BackgroundTransparency = 0.12, -- was 0.3: more opaque so the dark buttons are findable over a dark corridor
 	TextColor = Color3.fromRGB(245, 240, 230),
@@ -1644,14 +1670,23 @@ Config.Hiding = table.freeze({
 	FlushGraceSeconds = 0.6, -- a beat of RespawnGrace on a flush so being found isn't an instant grab
 	MaxTickDtFactor = 4, -- clamp the discover poll's dt to PollInterval*this so a server hitch can't snap discoverTime past DiscoverSeconds in one tick (mirrors Noise / Monster.Shared / Downed)
 
+	-- Concealment while hidden: a locker should HIDE you, but you were left standing visibly inside it
+	-- (and the placed lockers floated, so your head clipped the cabinet while your feet stuck out). The
+	-- server now SNAPS each locker model down onto the floor at boot (FloorSnap), and the client makes
+	-- YOUR OWN character invisible while tucked away (HiddenLocalTransparency, a LocalTransparencyModifier
+	-- -- view-only, never replicated) so you never see your body clip the cabinet. Teammates still see a
+	-- body in the locker (a fair tell). The "HIDDEN" overlay reads on top.
+	FloorSnap = true, -- snap each HidingSpot's Locker_* model so its base rests on the maze floor (fixes the float)
+	HiddenLocalTransparency = 1, -- LocalTransparencyModifier applied to your own character parts while hidden (1 = invisible to you only)
+
 	-- HUD (HideController, render-only): a prompt when near a usable spot + the hidden overlay.
 	PromptText = "HIDE", -- the "press E to HIDE" affordance shown near a spot
 	HiddenText = "HIDDEN — stay still", -- shown while you're tucked away
 	PromptColor = Color3.fromRGB(150, 200, 235),
 
-	-- On-screen touch HIDE button (mobile/iPad), bottom-right stack ABOVE the DECOY button (370).
+	-- On-screen touch HIDE button (mobile/iPad), bottom-right stack ABOVE the DECOY button (368).
 	TouchLabel = "HIDE",
-	TouchBottomOffset = 490, -- px from the bottom (above DECOY at 370, keeping the stack's 20px gap)
+	TouchBottomOffset = 474, -- px from the bottom (above DECOY at 368, in the re-spaced right-edge stack)
 	TouchColor = Color3.fromRGB(150, 200, 235),
 })
 

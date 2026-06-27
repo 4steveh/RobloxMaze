@@ -102,7 +102,7 @@ panel.Parent = gui
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.fromOffset(PAD, 14)
-title.Size = UDim2.fromOffset(S.PanelWidth - 2 * PAD - 32, 28)
+title.Size = UDim2.fromOffset(S.PanelWidth - 2 * PAD - 48, 28)
 title.BackgroundTransparency = 1
 title.Font = UI.HeadingFont
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -113,11 +113,11 @@ title.Parent = panel
 
 local closeBtn = Instance.new("TextButton")
 closeBtn.AnchorPoint = Vector2.new(1, 0)
-closeBtn.Position = UDim2.new(1, -14, 0, 12)
-closeBtn.Size = UDim2.fromOffset(28, 28)
+closeBtn.Position = UDim2.new(1, -12, 0, 8)
+closeBtn.Size = UDim2.fromOffset(42, 42) -- ~44px comfortable tap target (kids/iPad)
 closeBtn.BackgroundColor3 = UI.PanelColor
 closeBtn.Font = UI.SubheadingFont
-closeBtn.TextSize = 18
+closeBtn.TextSize = 22
 closeBtn.TextColor3 = UI.TextColor
 closeBtn.Text = "X"
 corner(closeBtn, UI.ChipCornerRadius)
@@ -161,8 +161,8 @@ local function stepperRow(y: number, label: string, attr: string)
 
 	local minusBtn = Instance.new("TextButton")
 	minusBtn.AnchorPoint = Vector2.new(1, 0)
-	minusBtn.Position = UDim2.new(1, -112, 0, 4)
-	minusBtn.Size = UDim2.fromOffset(28, 28)
+	minusBtn.Position = UDim2.new(1, -140, 0, 2)
+	minusBtn.Size = UDim2.fromOffset(42, 42) -- ~44px comfortable tap target (kids/iPad)
 	minusBtn.BackgroundColor3 = UI.PanelColor
 	minusBtn.Font = UI.HeadingFont
 	minusBtn.TextSize = 20
@@ -174,7 +174,7 @@ local function stepperRow(y: number, label: string, attr: string)
 
 	local value = Instance.new("TextLabel")
 	value.AnchorPoint = Vector2.new(1, 0)
-	value.Position = UDim2.new(1, -40, 0, 6)
+	value.Position = UDim2.new(1, -58, 0, 11) -- sits in the 16px gutter between the enlarged steppers
 	value.Size = UDim2.fromOffset(66, 24)
 	value.BackgroundTransparency = 1
 	value.Font = UI.HeadingFont
@@ -185,8 +185,8 @@ local function stepperRow(y: number, label: string, attr: string)
 
 	local plusBtn = Instance.new("TextButton")
 	plusBtn.AnchorPoint = Vector2.new(1, 0)
-	plusBtn.Position = UDim2.new(1, 0, 0, 4)
-	plusBtn.Size = UDim2.fromOffset(28, 28)
+	plusBtn.Position = UDim2.new(1, 0, 0, 2)
+	plusBtn.Size = UDim2.fromOffset(42, 42) -- ~44px comfortable tap target (kids/iPad)
 	plusBtn.BackgroundColor3 = UI.PanelColor
 	plusBtn.Font = UI.HeadingFont
 	plusBtn.TextSize = 20

@@ -86,6 +86,7 @@ RunService.Heartbeat:Connect(function(dt)
 			or humanoid.Health <= 0
 			or player:GetAttribute(Attributes.GameState) == Enums.GameState.Won
 			or player:GetAttribute(Attributes.Downed) == true
+			or player:GetAttribute(Attributes.Hidden) == true -- tucked in a locker (anchored): don't drain stamina or touch WalkSpeed
 		then
 			continue
 		end

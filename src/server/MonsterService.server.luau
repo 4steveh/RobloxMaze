@@ -71,6 +71,14 @@ local LETHAL_HUNT = {
 	[Enums.MonsterState.Investigate] = true,
 }
 
+-- Bloodlust ramps ONLY a confirmed eyes-on Chase -- never the monkey's UNSEEN Investigate rush. An
+-- Investigate that got speed-ramped past the player's sprint would run them down before it had even
+-- confirmed sight (the counter to Investigate is to go QUIET, not to be outrun) -- unfair. Kept
+-- separate from LETHAL_HUNT, which mutual-exclusion uses and legitimately includes Investigate.
+local BLOODLUST_HUNT = {
+	[Enums.MonsterState.Chase] = true,
+}
+
 -- World NOISE events (a sprung trap, via ServerSignals.NoiseEvent): the near-blind monkey
 -- investigates the loudest recent one. We store only the LATEST; the tick loop hands it to each
 -- eligible (hearing, in-range, not-dormant) rig exactly ONCE (tracked by event id), so it reads as
@@ -524,14 +532,16 @@ while true do
 				inst.mover.update(nil, dt)
 				return
 			end
-			-- CONTACT CATCH: a player who walks/runs INTO the rig is ALWAYS grabbed -- even during the
-			-- peace window or post-catch dormancy. Hunting is gated (the monster doesn't CHASE while
-			-- resting), but touching the monster is still death. This is the fix for "I ran over the
-			-- monkey and it didn't get me": proximity death is never gated by peace/dormancy/state.
+			-- CONTACT CATCH: once the round is LIVE, a player who walks/runs INTO the rig is ALWAYS
+			-- grabbed -- even during post-catch dormancy (the fix for "I ran over the monkey and it
+			-- didn't get me": proximity death isn't gated by dormancy/state). The ONE exception is the
+			-- round-start PEACE window: "peace" has to mean genuinely safe, so a kid orienting in the
+			-- calm can't be instakilled by bumping a roaming monster -- contact death waits for the hunt.
 			-- RespawnGrace still protects (the anti-spawn-camp invuln); a trap-stunned rig bailed above.
 			for _, ply in Players:GetPlayers() do
 				if
-					ply:GetAttribute(Attributes.InSafeRoom) ~= true
+					not peace
+					and ply:GetAttribute(Attributes.InSafeRoom) ~= true
 					and ply:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 					and ply:GetAttribute(Attributes.RespawnGrace) ~= true
 					and ply:GetAttribute(Attributes.Downed) ~= true
@@ -579,7 +589,7 @@ while true do
 			-- chaser's speed (anti-stall -- you can't circle one pillar forever), and resets the
 			-- instant the chase ends. Tracked off the just-updated FSM state.
 			local bloodlust = 0
-			if LETHAL_HUNT[inst.state.name] then
+			if BLOODLUST_HUNT[inst.state.name] then
 				inst.chaseStartClock = inst.chaseStartClock or now
 				if BL.Enabled then
 					local over = now - inst.chaseStartClock - BL.DelaySeconds

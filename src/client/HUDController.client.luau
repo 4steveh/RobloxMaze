@@ -325,7 +325,8 @@ pickupPulse.Parent = gui
 
 local function playPickupPulse()
 	pickupPulse.Visible = true
-	pickupPulse.BackgroundTransparency = HUD.PickupPulseTransparency
+	-- Peak routed through flashDepth (depth-from-clear) so the gold wash honours REDUCE-FLASHING like AllKeysFlash.
+	pickupPulse.BackgroundTransparency = 1 - flashDepth(1 - HUD.PickupPulseTransparency)
 	TweenService:Create(
 		pickupPulse,
 		TweenInfo.new(HUD.PickupPulseSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -350,7 +351,8 @@ allKeysFlash.Parent = gui
 -- via StingerController on the same GameWon remote. Render-only.
 local function playWinCelebration()
 	winFlash.Visible = true
-	winFlash.BackgroundTransparency = 0
+	-- Peak opacity routed through flashDepth so the relief bloom honours REDUCE-FLASHING (like AllKeysFlash).
+	winFlash.BackgroundTransparency = 1 - flashDepth(HUD.WinFlashPeak)
 	TweenService:Create(
 		winFlash,
 		TweenInfo.new(HUD.WinFlashSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -607,7 +609,10 @@ keyCollectedRemote.OnClientEvent:Connect(function(count, pickerName)
 	end
 	showToast(text, nil, Config.Feedback.KeyToastSeconds)
 	popPip(count) -- the pip that just filled (index == the new team total)
-	playPickupPulse() -- a screen-wide flash so a mid-chase pickup is never missed
+	-- On the LAST key the green AllKeys wash plays instead, so don't ALSO fire the gold pulse (no triple-wash).
+	if count < requiredKeys then
+		playPickupPulse() -- a screen-wide flash so a mid-chase pickup is never missed
+	end
 	-- Objective complete: the LAST key (same RequiredToWin the pip row + exit arrow key off) just landed.
 	if count >= requiredKeys then
 		playAllKeysCelebration()

@@ -42,6 +42,40 @@ local hideIntent = Remotes.get(Remotes.Names.HideIntent)
 local hideState = {}
 local lastIntent = {} -- [player] = os.clock() of the last ACCEPTED HideIntent (per-player rate limit)
 
+-- Self-heal the placed locker geometry: the Locker_<spot> models were authored FLOATING ~4 studs off
+-- the floor, so a hiding player (placed at the floor) had their head clip the cabinet while their feet
+-- stuck out below it ("head in, feet out"). Rather than depend on the unsaved place content being
+-- corrected by hand, SNAP each locker down so its base rests on the maze floor at boot -- reproducible,
+-- git-durable, and harmless if a locker is already seated (the <0.05 dy guard skips it). World-space
+-- translate (pre-multiply) so a rotated locker still moves straight DOWN in Y.
+local function normalizeLockers()
+	if not H.FloorSnap then
+		return
+	end
+	local floorY = Config.Maze.FloorY -- top surface of the maze floor (walls/props stand on it)
+	for _, spot in Discovery.getAll(Tags.HidingSpot) do
+		if spot:IsA("BasePart") then
+			local locker = spot.Parent and spot.Parent:FindFirstChild("Locker_" .. spot.Name)
+			if not (locker and locker:IsA("Model")) then
+				-- Structural fallback: some places nest the HidingSpot UNDER its Locker model rather than
+				-- as a named sibling -- find the enclosing Model instead (defensive; the sibling lookup is
+				-- what THIS place uses).
+				locker = spot:FindFirstAncestorWhichIsA("Model")
+			end
+			if locker and locker:IsA("Model") then
+				local cf, size = locker:GetBoundingBox()
+				local dy = floorY - (cf.Position.Y - size.Y / 2)
+				if math.abs(dy) > 0.05 then
+					locker:PivotTo(CFrame.new(0, dy, 0) * locker:GetPivot())
+				end
+			else
+				warn("[HidingService] no Locker model for tagged HidingSpot:", spot:GetFullName())
+			end
+		end
+	end
+end
+task.defer(normalizeLockers) -- after CollectionService tags settle (HidingSpot discovery)
+
 -- A monster that is actively HUNTING (Chase/Investigate -- not a calm patrol/search) within
 -- DiscoverRadius of a hidden body. Reads the rigs' replicated State attribute off the Monsters
 -- folder; Alert is excluded (it's the monkey's stationary "it heard you" tell, not a closing hunt).
@@ -100,7 +134,15 @@ local function hide(player: Player)
 	-- slide them onto the spot in the XZ plane. Remember the spot + where they came from (prePos) so we
 	-- can climb them back out in front of it (or, if the spot has no clear facing, back toward prePos).
 	local prePos = hrp.Position
-	hrp.CFrame = CFrame.new(Vector3.new(nearest.Position.X, prePos.Y, nearest.Position.Z))
+	-- Preserve the player's CURRENT horizontal facing so ducking in doesn't snap them to face world +Z
+	-- (identity rotation did): derive yaw from their HRP look and re-apply it at the hide spot.
+	local hidePos = Vector3.new(nearest.Position.X, prePos.Y, nearest.Position.Z)
+	local look = hrp.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 1e-3 then
+		flatLook = Vector3.new(0, 0, 1) -- degenerate (looking straight up/down) -> default facing
+	end
+	hrp.CFrame = CFrame.new(hidePos, hidePos + flatLook.Unit)
 	hrp.Anchored = true
 	hideState[player] = { spot = nearest, prePos = prePos, discoverTime = 0 }
 	player:SetAttribute(Attributes.Hidden, true)
@@ -115,16 +157,24 @@ local function unhide(player: Player)
 	local hrp = character and character:FindFirstChild("HumanoidRootPart")
 	if hrp and st and st.spot and st.spot.Parent then
 		local spot = st.spot
-		local look = spot.CFrame.LookVector
-		local dir = Vector3.new(look.X, 0, look.Z) -- the spot's flat facing = "in front"
-		if dir.Magnitude < 1e-3 then
-			local back = st.prePos - spot.Position -- no clear front: head back the way they came
-			dir = Vector3.new(back.X, 0, back.Z)
+		-- PRIMARY: drop them back onto prePos -- the known-walkable floor they stepped in from, so the
+		-- climb-out never shoves them THROUGH a wall the locker happens to face. The LookVector nudge is
+		-- only the fallback when prePos is missing or sits basically on top of the spot (degenerate).
+		local out
+		if st.prePos then
+			local back = st.prePos - spot.Position
+			if Vector3.new(back.X, 0, back.Z).Magnitude >= 1e-3 then
+				out = st.prePos
+			end
 		end
-		if dir.Magnitude < 1e-3 then
-			dir = Vector3.new(0, 0, 1) -- last resort so the Unit below never divides by zero
+		if not out then
+			local look = spot.CFrame.LookVector
+			local dir = Vector3.new(look.X, 0, look.Z) -- the spot's flat facing = "in front"
+			if dir.Magnitude < 1e-3 then
+				dir = Vector3.new(0, 0, 1) -- last resort so the Unit below never divides by zero
+			end
+			out = spot.Position + dir.Unit * H.ExitNudge
 		end
-		local out = spot.Position + dir.Unit * H.ExitNudge
 		hrp.CFrame = CFrame.new(Vector3.new(out.X, hrp.Position.Y, out.Z)) -- keep the anchored (standing) Y
 	end
 	if hrp then

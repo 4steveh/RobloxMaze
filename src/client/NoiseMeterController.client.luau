@@ -40,10 +40,11 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Bottom-right, mirroring the battery/stamina gauges on the left.
+-- Bottom-CENTER (was bottom-right, where the mobile jump button hid the LOUD/over-threshold half --
+-- exactly the part that teaches the monkey counter), so the whole bar reads above the jump button.
 local panel = Instance.new("Frame")
-panel.AnchorPoint = Vector2.new(1, 1)
-panel.Position = UDim2.new(1, -N.MeterMargin, 1, -N.MeterMargin)
+panel.AnchorPoint = Vector2.new(0.5, 1)
+panel.Position = UDim2.new(0.5, 0, 1, -N.MeterMargin)
 panel.Size = UDim2.fromOffset(N.MeterWidth, N.MeterHeight)
 panel.BackgroundColor3 = N.MeterBackColor
 panel.BorderSizePixel = 0
@@ -106,7 +107,7 @@ label.Position = UDim2.new(1, 0, 0, -2)
 label.Size = UDim2.fromOffset(N.MeterWidth, 16)
 label.BackgroundTransparency = 1
 label.Font = Config.UI.SubheadingFont
-label.TextSize = 12
+label.TextSize = 15 -- larger so the "NOISE" caption is legible on an iPad (was 12)
 label.TextXAlignment = Enum.TextXAlignment.Right
 label.TextColor3 = N.MeterQuietColor
 label.TextStrokeTransparency = Config.UI.TextStrokeTransparency
@@ -123,7 +124,7 @@ stateLabel.Position = UDim2.fromOffset(0, -2)
 stateLabel.Size = UDim2.fromOffset(60, 16)
 stateLabel.BackgroundTransparency = 1
 stateLabel.Font = Config.UI.SubheadingFont
-stateLabel.TextSize = 12
+stateLabel.TextSize = 15 -- larger so the QUIET/LOUD word is legible on an iPad (was 12)
 stateLabel.TextXAlignment = Enum.TextXAlignment.Left
 stateLabel.TextColor3 = N.MeterQuietColor
 stateLabel.TextStrokeColor3 = Config.UI.TextStrokeColor

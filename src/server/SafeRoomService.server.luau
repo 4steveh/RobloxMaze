@@ -33,21 +33,52 @@ local function markSafeRoom(part)
 	if not part:IsA("BasePart") then
 		return -- only solid trigger volumes carry the visual; ignore folders/attachments tagged by mistake
 	end
+	local SR = Config.SafeRoom
 
-	-- Green wire outline so the room's bounds read at a glance from down a dark hall. Type-guard the
-	-- find-or-create (like TrapService) so a wrongly-typed pre-existing "SafeOutline" child can't make
-	-- the property writes below throw and break idempotency.
-	local outline = part:FindFirstChild("SafeOutline")
-	if not (outline and outline:IsA("SelectionBox")) then
-		outline = Instance.new("SelectionBox")
-		outline.Name = "SafeOutline"
-		outline.Adornee = part
-		outline.LineThickness = 0.05 -- a thin calm line, not a thick beacon
-		outline.Parent = part
+	-- Retire the old full-VOLUME wireframe (a floating green cage that read as debug art): a glowing
+	-- FLOOR BORDER traced around the room base instead -- finished, and the green twin of the trap's red
+	-- floor pad. Idempotent: rebuild a "SafeTrim" folder of four neon strips each call (clears + refills),
+	-- so a re-tag never stacks duplicates. Strips are placed in the room's LOCAL frame (part.CFrame * ...)
+	-- so a rotated room is still traced correctly.
+	local stale = part:FindFirstChild("SafeOutline")
+	if stale then
+		stale:Destroy()
 	end
-	outline.Color3 = Config.SafeRoom.OutlineColor
-	outline.SurfaceColor3 = Config.SafeRoom.OutlineColor
-	outline.Transparency = Config.SafeRoom.OutlineTransparency
+	local trim = part:FindFirstChild("SafeTrim")
+	if not (trim and trim:IsA("Folder")) then
+		if trim then
+			trim:Destroy()
+		end
+		trim = Instance.new("Folder")
+		trim.Name = "SafeTrim"
+		trim.Parent = part
+	else
+		trim:ClearAllChildren()
+	end
+	local s = part.Size
+	local floorLocalY = -s.Y / 2 + SR.TrimRaise -- the room's floor, in its own frame, a hair raised
+	local t = SR.TrimThickness
+	local function strip(name: string, size: Vector3, localPos: Vector3)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = Enum.Material.Neon
+		p.Color = SR.OutlineColor
+		p.Transparency = SR.OutlineTransparency
+		p.Size = size
+		p.CFrame = part.CFrame * CFrame.new(localPos)
+		p.Parent = trim
+	end
+	-- Two strips spanning X (the north/south edges) and two spanning Z (east/west), inset by half their
+	-- thickness so the border sits flush inside the footprint.
+	strip("TrimN", Vector3.new(s.X, SR.TrimHeight, t), Vector3.new(0, floorLocalY, s.Z / 2 - t / 2))
+	strip("TrimS", Vector3.new(s.X, SR.TrimHeight, t), Vector3.new(0, floorLocalY, -s.Z / 2 + t / 2))
+	strip("TrimE", Vector3.new(t, SR.TrimHeight, s.Z), Vector3.new(s.X / 2 - t / 2, floorLocalY, 0))
+	strip("TrimW", Vector3.new(t, SR.TrimHeight, s.Z), Vector3.new(-s.X / 2 + t / 2, floorLocalY, 0))
 
 	-- Soft inviting glow so the sanctuary self-lights in the dark (kept gentle -- it must not outshine
 	-- the keys/exit, which are the objective). Shadows off: it's a wash, not a caster.
