@@ -22,7 +22,7 @@ local WorldFolders = require(ReplicatedStorage.WorldFolders)
 
 local STATE_ATTRIBUTE = Attributes.MonsterState -- matches the rig attribute MonsterService writes
 
--- [rig] = { root, joints = { [Part1Name] = Motor6D }, species, lastPos, speed, phase, moveW, chaseW }
+-- [rig] = { root, joints = { [Part1Name] = Motor6D }, species, lastPos, speed, phase, moveW, chaseW, speciesConn }
 local rigs = {}
 
 -- A catch/round-reset teleports the rig home (PivotTo); that one-frame jump reads as a huge
@@ -63,7 +63,7 @@ local function addRig(rig)
 		if rigs[rig] then
 			return
 		end
-		rigs[rig] = {
+		local s = {
 			root = root,
 			joints = joints or {},
 			species = rig:GetAttribute(Attributes.MonsterSpecies) or Enums.MonsterType.Bunny,
@@ -73,10 +73,22 @@ local function addRig(rig)
 			moveW = 0,
 			chaseW = 0,
 		}
+		rigs[rig] = s
+		-- Species can replicate slightly after the model arrives; re-read it on change so a monkey
+		-- rig can't be stranded on the bunny gait (same late-replication guard the rig audio uses).
+		s.speciesConn = rig:GetAttributeChangedSignal(Attributes.MonsterSpecies):Connect(function()
+			if rigs[rig] == s then -- still the live entry (not removed/replaced)
+				s.species = rig:GetAttribute(Attributes.MonsterSpecies) or Enums.MonsterType.Bunny
+			end
+		end)
 	end)
 end
 
 local function removeRig(rig)
+	local s = rigs[rig]
+	if s and s.speciesConn then
+		s.speciesConn:Disconnect()
+	end
 	rigs[rig] = nil
 end
 

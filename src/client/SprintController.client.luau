@@ -7,6 +7,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
@@ -65,7 +66,7 @@ if UserInputService.TouchEnabled then
 	corner.Parent = btn
 	local ring = Instance.new("UIStroke")
 	ring.Color = TC.SprintColor
-	ring.Thickness = 3
+	ring.Thickness = TC.RingThickness
 	ring.Parent = btn
 	if TC.SprintIconImage ~= "" then
 		local icon = Instance.new("ImageLabel")
@@ -77,6 +78,17 @@ if UserInputService.TouchEnabled then
 		icon.Parent = btn
 		btn.Text = ""
 	end
+	-- Tap-punch: a quick scale pop as the hold STARTS (springs back via Back/Out) -- tactile feedback kids can SEE.
+	local scale = Instance.new("UIScale")
+	scale.Parent = btn
+	local function punch()
+		scale.Scale = TC.PressScale
+		TweenService:Create(
+			scale,
+			TweenInfo.new(TC.PressReturnSeconds, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{ Scale = 1 }
+		):Play()
+	end
 	-- Hold: press anywhere on the button -> sprint; lift/leave -> stop.
 	btn.InputBegan:Connect(function(input)
 		if
@@ -84,6 +96,7 @@ if UserInputService.TouchEnabled then
 			or input.UserInputType == Enum.UserInputType.MouseButton1
 		then
 			send(true)
+			punch() -- fire on the PRESS (hold start), not on release
 		end
 	end)
 	btn.InputEnded:Connect(function(input)

@@ -104,7 +104,7 @@ player:GetAttributeChangedSignal(Attributes.InSafeRoom):Connect(function()
 end)
 
 -- Per-rig 3D sounds (breathing loop + footstep one-shots) on the rig's HRP.
-local rigAudio = {} -- [rig] = { hrp, breathing, footstep, lastPos, stepAccum, mix, occluded, occAccum, breathBase, footBase }
+local rigAudio = {} -- [rig] = { hrp, breathing, footstep, lastPos, stepAccum, mix, occluded, occAccum, breathBase, footBase, speciesConn }
 
 local function mixFor(species)
 	return MA.SpeciesMix[species] or MA.SpeciesMix[Enums.MonsterType.Bunny]
@@ -161,6 +161,20 @@ local function applyOcclusion(a, occluded)
 	end
 end
 
+-- (Re)derive the per-species mix and push it onto this rig's live sounds. Species can replicate
+-- AFTER the HRP (the rig model arrives, its MonsterSpecies attribute lands a frame or two later),
+-- so a single early read would strand a monkey rig on the bunny mix forever; addRig applies this
+-- once and again on every MonsterSpecies change (RadarController re-reads Species each ping for
+-- exactly this reason).
+local function applySpecies(a, rig)
+	local mix = mixFor(rig:GetAttribute(Attributes.MonsterSpecies) or Enums.MonsterType.Bunny)
+	a.mix = mix
+	a.breathBase = MA.BreathingVolume * mix.VolumeScale
+	a.footBase = MA.FootstepVolume * mix.VolumeScale
+	a.breathing.PlaybackSpeed = mix.Pitch
+	applyOcclusion(a, a.occluded) -- re-push the breath/foot volumes honoring the current occlusion
+end
+
 local function addRig(rig)
 	if not rig:IsA("Model") or rigAudio[rig] then
 		return
@@ -170,37 +184,42 @@ local function addRig(rig)
 		if not hrp or rigAudio[rig] then
 			return
 		end
-		local species = rig:GetAttribute(Attributes.MonsterSpecies) or Enums.MonsterType.Bunny
-		local mix = mixFor(species)
-		local breathBase = MA.BreathingVolume * mix.VolumeScale
-		local footBase = MA.FootstepVolume * mix.VolumeScale
-
-		local breathing = makeSpatial(MA.BreathingId, breathBase, MA.BreathingRange, true)
+		-- Created with placeholder volumes/pitch; applySpecies below sets the real species-derived mix.
+		local breathing = makeSpatial(MA.BreathingId, MA.BreathingVolume, MA.BreathingRange, true)
 		breathing.Name = "Breathing"
-		breathing.PlaybackSpeed = mix.Pitch
 		breathing.Parent = hrp
 		breathing:Play()
-		local footstep = makeSpatial(MA.FootstepId, footBase, MA.FootstepRange, false)
+		local footstep = makeSpatial(MA.FootstepId, MA.FootstepVolume, MA.FootstepRange, false)
 		footstep.Name = "Footstep"
 		footstep.Parent = hrp
-		rigAudio[rig] = {
+		local a = {
 			hrp = hrp,
 			breathing = breathing,
 			footstep = footstep,
 			lastPos = hrp.Position,
 			stepAccum = 0,
-			mix = mix,
+			mix = mixFor(Enums.MonsterType.Bunny),
 			occluded = false,
 			occAccum = math.random() * OCC.Interval, -- stagger the rays across rigs
-			breathBase = breathBase,
-			footBase = footBase,
+			breathBase = MA.BreathingVolume,
+			footBase = MA.FootstepVolume,
 		}
+		rigAudio[rig] = a
+		applySpecies(a, rig)
+		a.speciesConn = rig:GetAttributeChangedSignal(Attributes.MonsterSpecies):Connect(function()
+			if rigAudio[rig] == a then -- still the live entry (not removed/replaced)
+				applySpecies(a, rig)
+			end
+		end)
 	end)
 end
 
 local function removeRig(rig)
 	local a = rigAudio[rig]
 	if a then
+		if a.speciesConn then
+			a.speciesConn:Disconnect()
+		end
 		a.breathing:Destroy()
 		a.footstep:Destroy()
 		rigAudio[rig] = nil

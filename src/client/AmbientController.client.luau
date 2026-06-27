@@ -114,8 +114,8 @@ local function applyReverb()
 end
 applyReverb()
 player:GetAttributeChangedSignal(Attributes.InSafeRoom):Connect(applyReverb)
--- A respawn can't inherit a stale reverb: the server clears InSafeRoom on a fresh
--- character, but reset locally too so there's no window between spawn and that write.
-player.CharacterAdded:Connect(function()
-	SoundService.AmbientReverb = Config.Audio.Reverb.Maze
-end)
+-- A respawn can't inherit a stale reverb: re-derive it from the authoritative InSafeRoom
+-- attribute (don't force Maze) -- respawning INSIDE a safe room doesn't re-transition InSafeRoom,
+-- so a forced Maze would strand the reverb wrong; deriving keeps the maze case unchanged and the
+-- in-safe-room case correct.
+player.CharacterAdded:Connect(applyReverb)

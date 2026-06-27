@@ -186,7 +186,9 @@ local lastClock = os.clock()
 while true do
 	task.wait(Config.Spatial.PollInterval)
 	local now = os.clock()
-	local dt = math.max(now - lastClock, 1e-3)
+	-- Clamp the upper bound too: a server hitch must not advance revive progress past its
+	-- threshold in one tick (MonsterService + NoiseService clamp their dt for the same reason).
+	local dt = math.clamp(now - lastClock, 1e-3, Config.Spatial.PollInterval * D.MaxTickDtFactor)
 	lastClock = now
 	local serverTime = Workspace:GetServerTimeNow()
 

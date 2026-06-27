@@ -112,10 +112,16 @@ local function forgetRig(rig)
 	end
 	glowByRig[rig] = nil
 end
-task.spawn(function()
-	local monsters = Workspace:WaitForChild(WorldFolders.Monsters)
-	monsters.ChildRemoved:Connect(forgetRig)
-end)
+-- Bounded wait (mirrors the rig controllers): wire the cleanup once the folder exists, but never
+-- yield forever if MonsterService errored before parenting it -- and don't `return`, which would
+-- skip the RenderStepped below; just leave the glow caches uncleaned and warn.
+local monstersFolder = Workspace:FindFirstChild(WorldFolders.Monsters)
+	or Workspace:WaitForChild(WorldFolders.Monsters, 30)
+if monstersFolder then
+	monstersFolder.ChildRemoved:Connect(forgetRig)
+else
+	warn("[ChaseFXController] Monsters folder never appeared; glow cleanup disabled")
+end
 
 local current = 0
 RunService.RenderStepped:Connect(function(dt)

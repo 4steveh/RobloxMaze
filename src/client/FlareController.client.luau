@@ -1,31 +1,38 @@
 --!nonstrict
--- DecoyController.client.luau
--- Sends the THROW-DECOY intent (no payload) and shows the cooldown. DecoyService owns the
--- throw entirely (landing point, cooldown, the rattling decoy, the NoiseEvent) -- this script
--- only captures input + renders a local cooldown HUD/button. The server re-validates everything,
--- so the local cooldown is purely for feel (it never gates the authoritative server cooldown).
+-- FlareController.client.luau
+-- Input + HUD for the FLARE (the throwable light burst that freezes a monster). FlareService owns the
+-- throw entirely (landing point, charges, cooldown, the burning flare, the blind) -- this script only
+-- captures input + renders a local "FLARE xN" chip and the on-screen touch button. The server
+-- re-validates everything, so the local cooldown/charge check is purely for feel (it never gates the
+-- authoritative server checks). Mirrors DecoyController.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
-local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Config)
 local Remotes = require(ReplicatedStorage.Remotes)
+local Attributes = require(ReplicatedStorage.Attributes)
 local AudioGroups = require(ReplicatedStorage.AudioGroups)
 
-local C = Config.Decoy
+local C = Config.Flare
 local TC = Config.TouchControls
 local ST = Config.Audio.Stingers
-local throwRemote = Remotes.get(Remotes.Names.ThrowDecoy)
+
+if not C.Enabled then
+	return -- feature off: don't bind input or build the FLARE HUD
+end
+
+local throwRemote = Remotes.get(Remotes.Names.ThrowFlare)
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Local release confirmation: a short 2D one-shot the instant the throw is accepted, so the input
--- feels immediate (the landed decoy's 3D rattle is server-side). Routed through the SFX bus.
+-- Local release confirmation: a short 2D one-shot the instant the throw fires, so input feels immediate
+-- (the landed flare's 3D ignite is server-side, possibly far away). Routed through the SFX bus.
 local throwSound = Instance.new("Sound")
 throwSound.SoundId = ST.DecoyThrowId
 throwSound.Volume = ST.DecoyThrowVolume
@@ -35,8 +42,12 @@ throwSound.Parent = SoundService
 
 local cooldownUntil = 0 -- os.clock() until which the local UI shows "on cooldown"
 
+local function charges(): number
+	return player:GetAttribute(Attributes.FlareCharges) or 0
+end
+
 local function tryThrow()
-	if os.clock() < cooldownUntil then
+	if os.clock() < cooldownUntil or charges() <= 0 then
 		return
 	end
 	cooldownUntil = os.clock() + C.Cooldown
@@ -46,23 +57,23 @@ end
 
 -- Keyboard (PC) + a gamepad button bound to the same action. createTouchButton=false: touch
 -- devices get the custom button below.
-ContextActionService:BindAction("ThrowDecoy", function(_, inputState)
+ContextActionService:BindAction("ThrowFlare", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then
 		tryThrow()
 	end
 	return Enum.ContextActionResult.Sink
 end, false, C.ThrowKey, C.GamepadThrowKey)
 
--- HUD cooldown chip (all devices): "DECOY" + a draining fill while on cooldown, bottom-left.
+-- HUD chip (all devices): "FLARE xN" + a draining fill while on cooldown, bottom-left above the DECOY chip.
 local gui = Instance.new("ScreenGui")
-gui.Name = "DecoyHud"
+gui.Name = "FlareHud"
 gui.ResetOnSpawn = false
 gui.Parent = playerGui
 
 local chip = Instance.new("Frame")
 chip.Name = "Chip"
 chip.AnchorPoint = Vector2.new(0, 1)
-chip.Position = UDim2.new(0, 18, 1, -C.ChipBottomOffset) -- above the battery+stamina gauges, not over them
+chip.Position = UDim2.new(0, 18, 1, -C.ChipBottomOffset) -- above the DECOY chip + the gauges, not over them
 chip.Size = UDim2.fromOffset(120, 26)
 chip.BackgroundColor3 = TC.BackgroundColor
 chip.BackgroundTransparency = TC.BackgroundTransparency
@@ -83,7 +94,6 @@ fillCorner.CornerRadius = UDim.new(0, 6)
 fillCorner.Parent = fill
 fill.Parent = chip
 
-local readyHint = UserInputService.TouchEnabled and C.Label or (C.Label .. "  [" .. C.ThrowKey.Name .. "]")
 local chipLabel = Instance.new("TextLabel")
 chipLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 chipLabel.Position = UDim2.fromScale(0.5, 0.5)
@@ -92,14 +102,14 @@ chipLabel.BackgroundTransparency = 1
 chipLabel.Font = Enum.Font.GothamBold
 chipLabel.TextSize = 14
 chipLabel.TextColor3 = TC.TextColor
-chipLabel.Text = readyHint
 chipLabel.ZIndex = 2
 chipLabel.Parent = chip
 
--- Custom circular tap button for touch devices, stacked above the LIGHT button.
+-- Custom circular tap button for touch devices, stacked above the HIDE button.
+local touchButton, touchScale
 if UserInputService.TouchEnabled then
 	local btn = Instance.new("TextButton")
-	btn.Name = "DecoyButton"
+	btn.Name = "FlareButton"
 	btn.AnchorPoint = Vector2.new(1, 1)
 	btn.Position = UDim2.new(1, -TC.EdgeMargin, 1, -C.TouchBottomOffset)
 	btn.Size = UDim2.fromOffset(TC.ButtonSize, TC.ButtonSize)
@@ -118,30 +128,44 @@ if UserInputService.TouchEnabled then
 	ring.Color = C.ButtonColor
 	ring.Thickness = TC.RingThickness
 	ring.Parent = btn
-	-- Tap-punch: a quick scale pop on every press (springs back via Back/Out) -- tactile feedback kids can SEE.
-	local scale = Instance.new("UIScale")
-	scale.Parent = btn
-	local function punch()
-		scale.Scale = TC.PressScale
+	touchScale = Instance.new("UIScale")
+	touchScale.Parent = btn
+	btn.Activated:Connect(function()
+		-- Tactile tap punch kids can SEE (mirrors the other touch buttons).
+		touchScale.Scale = TC.PressScale
 		TweenService:Create(
-			scale,
+			touchScale,
 			TweenInfo.new(TC.PressReturnSeconds, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 			{ Scale = 1 }
 		):Play()
-	end
-	btn.Activated:Connect(function()
 		tryThrow()
-		punch()
 	end)
 	btn.Parent = gui
+	touchButton = btn
 end
 
--- Drain the cooldown fill (full = on cooldown, empty = ready).
+-- Per-frame: drain the cooldown fill (full = on cooldown), update the charge count, and dim everything
+-- when out of flares so the affordance reads "empty".
+local touchLabel = UserInputService.TouchEnabled
 RunService.Heartbeat:Connect(function()
+	local n = charges()
+	local hint = touchLabel and ("FLARE x" .. n) or ("FLARE x" .. n .. "  [" .. C.ThrowKey.Name .. "]")
+	chipLabel.Text = hint
+
 	local remaining = cooldownUntil - os.clock()
 	if remaining <= 0 then
 		fill.Size = UDim2.fromScale(0, 1)
 	else
 		fill.Size = UDim2.fromScale(math.clamp(remaining / C.Cooldown, 0, 1), 1)
+	end
+
+	local empty = n <= 0
+	chip.BackgroundTransparency = empty and math.min(0.85, TC.BackgroundTransparency + 0.35)
+		or TC.BackgroundTransparency
+	chipLabel.TextTransparency = empty and 0.4 or 0
+	if touchButton then
+		touchButton.BackgroundTransparency = empty and math.min(0.85, TC.BackgroundTransparency + 0.35)
+			or TC.BackgroundTransparency
+		touchButton.TextTransparency = empty and 0.4 or 0
 	end
 end)

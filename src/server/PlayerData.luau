@@ -82,9 +82,13 @@ function PlayerData.load(player, data)
 			end
 		end
 		if type(data.equipped) == "table" then
-			for kind, id in data.equipped do
-				if Cosmetics.get(id) and p.owned[id] then
-					p.equipped[kind] = id
+			-- Derive the slot from the CATALOG (Cosmetics.kind), not the saved key -- symmetric with
+			-- tryPurchase/tryEquip (which both key off c.kind) and so a garbled/numeric saved key can't
+			-- mis-slot an owned cosmetic.
+			for _, id in data.equipped do
+				local c = Cosmetics.get(id)
+				if c and p.owned[id] then
+					p.equipped[c.kind] = id
 				end
 			end
 		end

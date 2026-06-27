@@ -138,6 +138,7 @@ local function eligible(player: Player): boolean
 		and player:GetAttribute(Attributes.GameState) ~= Enums.GameState.Won
 		and player:GetAttribute(Attributes.RespawnGrace) ~= true
 		and player:GetAttribute(Attributes.Downed) ~= true
+		and player:GetAttribute(Attributes.Hidden) ~= true -- a hidden (anchored) player can't dodge a trap, so spare them
 end
 
 -- Fire: lethal + loud, then cool down before it can trigger again.

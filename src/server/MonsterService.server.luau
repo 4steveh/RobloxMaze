@@ -132,6 +132,19 @@ local function buildSightParams(playerChars: { Instance }): RaycastParams
 	return params
 end
 
+-- A catch only lands if there's an UNOBSTRUCTED segment between the rig and the player -- so a monster
+-- can never grab THROUGH a wall. In a 12-stud-cell maze with 2-stud walls, two centres can sit ~4 studs
+-- apart (within CatchRadius 5) across a wall when both hug it in parallel corridors; without this gate
+-- that reads as a clear bug to a kid. Reuses the per-tick sight params (which exclude every rig + all
+-- player characters, so ONLY world geometry blocks): no hit => genuine contact. Keeps "touch = death".
+local function catchReachable(from: Vector3, to: Vector3, params: RaycastParams): boolean
+	local delta = to - from
+	if delta.Magnitude < 1e-3 then
+		return true
+	end
+	return Workspace:Raycast(from, delta, params) == nil
+end
+
 -- Build a rig's sensed player list: each eligible living player with a `visible` flag
 -- (the species' sight cone + LoS) and a `noise` value (effectiveNoise = the player's
 -- server-computed NoiseLevel x distance falloff over cfg.HearRange -- only for a species
@@ -525,7 +538,11 @@ while true do
 					and ply:GetAttribute(Attributes.Hidden) ~= true
 				then
 					local phrp = PlayerUtil.livingRootPart(ply)
-					if phrp and (phrp.Position - root.Position).Magnitude <= inst.cfg.CatchRadius then
+					if
+						phrp
+						and (phrp.Position - root.Position).Magnitude <= inst.cfg.CatchRadius
+						and catchReachable(root.Position, phrp.Position, sightParams)
+					then
 						catch(inst, ply)
 						return
 					end
@@ -581,7 +598,21 @@ while true do
 				-- speeds sit well below the cap, so it only ever binds during a hot chase.
 				humanoid.WalkSpeed = math.min(result.speed * speedMul * (1 + bloodlust), inst.cfg.MaxHuntSpeed)
 			end
-			inst.mover.update(result.moveTarget, dt)
+
+			-- Through-wall catch guard + corner-stall fix: if the FSM decided a catch but a wall breaks
+			-- LoS to the player, DON'T honor the catch -- AND don't let the rig stand on the FSM's
+			-- stand-still target. Redirect it to the player's HRP so it paths AROUND the wall to make
+			-- genuine contact (the contact-catch fires the instant LoS clears). Clearing result.caught
+			-- also lets the FSM give-up timers advance, so a blocked rig can never wedge frozen at a wall.
+			local moveTarget = result.moveTarget
+			if result.caught then
+				local cphrp = PlayerUtil.livingRootPart(result.caught)
+				if cphrp and not catchReachable(root.Position, cphrp.Position, sightParams) then
+					moveTarget = cphrp.Position
+					result.caught = nil
+				end
+			end
+			inst.mover.update(moveTarget, dt)
 
 			-- Face-while-standing (the monkey's Alert "it heard you" snap): when an FSM
 			-- returns a faceTarget and no movement, smoothly yaw the rig toward it.
@@ -594,30 +625,66 @@ while true do
 			end
 			rig:SetAttribute(STATE_ATTRIBUTE, inst.state.name)
 
-			-- Per-player chase signal: when this rig's FSM state changes, tell the chased
-			-- player (or the one it just stopped chasing) so their MonsterAudioController
-			-- can hit or clear the chase sting -- correct even with multiple players.
-			if inst.state.name ~= inst.prevState then
-				local uid = inst.state.targetUserId or inst.prevTargetUserId
-				local target = uid and Players:GetPlayerByUserId(uid)
-				if target then
-					stateRemote:FireClient(target, inst.state.name)
-				end
-				-- Co-op SA: this rig just STARTED a lethal hunt (entered Chase/Investigate from a
-				-- non-lethal state) on a real player -> alert the WHOLE lobby (throttled per target),
-				-- so teammates know someone's in danger. The target already feels it via stateRemote.
-				local tuid = inst.state.targetUserId
-				if tuid and LETHAL_HUNT[inst.state.name] and not LETHAL_HUNT[inst.prevState] then
-					local hunted = Players:GetPlayerByUserId(tuid)
-					if hunted and now - (lastHuntAlert[tuid] or -math.huge) >= Config.Feedback.HuntAlertCooldown then
-						lastHuntAlert[tuid] = now
-						huntingAlertRemote:FireAllClients(hunted.Name)
+			-- Per-player chase signal: fire when this rig's (state, target) PAIR changes -- not just the
+			-- state NAME. Both FSMs re-acquire the nearest visible player every Chase tick, so a rig can
+			-- flip targetUserId A->B while staying "Chase"; the old name-only gate never told player B they
+			-- were now hunted (no chase sting / dread heartbeat) and never cleared player A. So co-op
+			-- players being actively chased got NO feedback -- the common case for this audience.
+			local newName = inst.state.name
+			local newTarget = inst.state.targetUserId
+			if newName ~= inst.prevState or newTarget ~= inst.prevTargetUserId then
+				-- Switched to a DIFFERENT victim: clear the one it dropped (Patrol = "safe from this rig
+				-- now") so a teammate's chase bed doesn't strand when the monster peels onto someone else.
+				if inst.prevTargetUserId and newTarget and inst.prevTargetUserId ~= newTarget then
+					local dropped = Players:GetPlayerByUserId(inst.prevTargetUserId)
+					-- ...but only clear their cue if NO OTHER live rig is still lethally hunting them, else a
+					-- second chaser's dread bed would be wrongly silenced (the co-op false-silence regression).
+					if dropped then
+						local stillHunted = false
+						for _, other in instances do
+							if
+								other ~= inst
+								and LETHAL_HUNT[other.state.name]
+								and other.state.targetUserId == inst.prevTargetUserId
+							then
+								stillHunted = true
+								break
+							end
+						end
+						if not stillHunted then
+							stateRemote:FireClient(dropped, Enums.MonsterState.Patrol)
+						end
 					end
 				end
-				inst.prevState = inst.state.name
+				-- Notify the relevant player of the new state: the current target if there is one, else
+				-- the player it WAS hunting (so a Chase->Search/Patrol loss still de-escalates their cue).
+				local uid = newTarget or inst.prevTargetUserId
+				local target = uid and Players:GetPlayerByUserId(uid)
+				if target then
+					stateRemote:FireClient(target, newName)
+				end
+				-- Co-op SA: a lethal hunt just began on a real player (entered a lethal state from a
+				-- non-lethal one, OR locked onto a NEW victim mid-hunt) -> alert the lobby (throttled per
+				-- target). Teammates learn someone's in danger; the target already feels it via stateRemote.
+				if newTarget and LETHAL_HUNT[newName] then
+					local newVictim = newTarget ~= inst.prevTargetUserId
+					if not LETHAL_HUNT[inst.prevState] or newVictim then
+						local hunted = Players:GetPlayerByUserId(newTarget)
+						if
+							hunted
+							and now - (lastHuntAlert[newTarget] or -math.huge) >= Config.Feedback.HuntAlertCooldown
+						then
+							lastHuntAlert[newTarget] = now
+							huntingAlertRemote:FireAllClients(hunted.Name)
+						end
+					end
+				end
+				inst.prevState = newName
 			end
 			inst.prevTargetUserId = inst.state.targetUserId
 
+			-- Honor the catch: a wall-blocked catch was already cleared above (the rig was redirected to
+			-- path around it), so a surviving result.caught is a genuine, reachable contact.
 			if result.caught then
 				catch(inst, result.caught)
 			end

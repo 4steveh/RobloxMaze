@@ -221,6 +221,9 @@ local function watch(other)
 	if other == player then
 		return
 	end
+	if connections[other] then
+		return -- already watching: PlayerAdded + the initial roster sweep can race; don't double-connect (leaks)
+	end
 	connections[other] = {
 		other:GetAttributeChangedSignal(Attributes.Downed):Connect(function()
 			refreshBeacon(other)

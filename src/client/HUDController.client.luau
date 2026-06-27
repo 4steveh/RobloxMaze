@@ -27,6 +27,26 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local keyCount = 0
 
+-- REDUCE-FLASHING comfort pref (the same cache FlashlightController keeps): the HUD's own washes and
+-- throbs honour the SettingsController toggle so a photosensitive player never gets strobed. Cached +
+-- kept live off the client-local Setting attribute; validate the type and fall back to the Config default.
+local reduceFlashing = Config.Settings.DefaultReduceFlashing
+local function refreshReduceFlashing()
+	local reduce = player:GetAttribute(Attributes.SettingReduceFlashing)
+	reduceFlashing = if typeof(reduce) == "boolean" then reduce else Config.Settings.DefaultReduceFlashing
+end
+refreshReduceFlashing()
+player:GetAttributeChangedSignal(Attributes.SettingReduceFlashing):Connect(refreshReduceFlashing)
+
+-- Scale a flash/throb DEPTH toward zero when REDUCE-FLASHING is on: off -> unchanged; on -> only
+-- (1 - Config.Settings.ReduceFlashingFloor) of the effect remains, so a higher floor = LESS flashing.
+local function flashDepth(depth)
+	if reduceFlashing then
+		return depth * (1 - Config.Settings.ReduceFlashingFloor)
+	end
+	return depth
+end
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "HUD"
 gui.ResetOnSpawn = false
@@ -224,6 +244,12 @@ arrow.TextColor3 = HUD.ArrowColor
 arrow.Visible = false
 arrow.Parent = gui
 
+-- A UIScale the exit arrow gently THROBS (render loop) while it's shown, so once every key is in the
+-- eyes snap to the run-for-it goal; 1 at rest. A scale pulse (not a flash), so it ignores reduce-flashing.
+local arrowScale = Instance.new("UIScale")
+arrowScale.Scale = 1
+arrowScale.Parent = arrow
+
 -- "EXIT" caption under the gold arrow, so its glyph is never confused with the green KEY arrow
 -- (CompassController) that points to keys during the hunt -- the two now read as distinct goals.
 local arrowLabel = Instance.new("TextLabel")
@@ -306,6 +332,18 @@ local function playPickupPulse()
 		{ BackgroundTransparency = 1 }
 	):Play()
 end
+
+-- ALL-KEYS celebration wash: a GREEN full-screen flash the instant the team grabs the LAST key, so the
+-- objective-complete beat reads even with eyes on the monster (green = "done -- go!", distinct from the
+-- per-key gold PickupPulse). Sits above the pip row like the pickup wash; transparent/hidden at rest.
+local allKeysFlash = Instance.new("Frame")
+allKeysFlash.Name = "AllKeysFlash"
+allKeysFlash.Size = UDim2.fromScale(1, 1)
+allKeysFlash.BackgroundColor3 = HUD.AllKeysFlashColor
+allKeysFlash.BackgroundTransparency = 1
+allKeysFlash.ZIndex = 9
+allKeysFlash.Visible = false
+allKeysFlash.Parent = gui
 
 -- The escape is the run's PAYOFF, so it arrives as a sequence (bloom -> overlay eases in -> icon
 -- pops with an overshoot -> label rises in), not a hard Visible flip. The win jingle already lands
@@ -451,6 +489,20 @@ local function showToast(text, color, seconds)
 	end)
 end
 
+-- Fire the ALL-KEYS beat: the "RUN FOR THE EXIT" toast + the green wash, flashing from the configured
+-- peak (REDUCE-FLASHING scales the peak's depth-from-clear) to fully clear. Called only when the LAST
+-- key lands, mirroring playPickupPulse/playWinCelebration. Render-only -- the HUD decides nothing.
+local function playAllKeysCelebration()
+	showToast(HUD.AllKeysToastText, HUD.AllKeysToastColor, HUD.AllKeysToastSeconds)
+	allKeysFlash.Visible = true
+	allKeysFlash.BackgroundTransparency = 1 - flashDepth(1 - HUD.AllKeysFlashPeak)
+	TweenService:Create(
+		allKeysFlash,
+		TweenInfo.new(HUD.AllKeysFlashSeconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 1 }
+	):Play()
+end
+
 -- Sprint EXHAUSTION feedback. When stamina empties mid-chase the server cuts your speed, which can
 -- read as "Shift stopped working". A one-shot jolt + "OUT OF BREATH" toast at the moment of
 -- exhaustion tells the player WHY they slowed. Fires once per drain; re-arms only after stamina
@@ -556,6 +608,10 @@ keyCollectedRemote.OnClientEvent:Connect(function(count, pickerName)
 	showToast(text, nil, Config.Feedback.KeyToastSeconds)
 	popPip(count) -- the pip that just filled (index == the new team total)
 	playPickupPulse() -- a screen-wide flash so a mid-chase pickup is never missed
+	-- Objective complete: the LAST key (same RequiredToWin the pip row + exit arrow key off) just landed.
+	if count >= requiredKeys then
+		playAllKeysCelebration()
+	end
 end)
 
 gameWonRemote.OnClientEvent:Connect(playWinCelebration)
@@ -612,9 +668,18 @@ RunService.RenderStepped:Connect(function()
 	end
 	local frac = math.clamp(battery / Config.Flashlight.BatteryMax, 0, 1)
 	batteryFill.Size = UDim2.fromScale(frac, 1)
-	batteryFill.BackgroundColor3 = if battery <= Config.Flashlight.LowBatteryThreshold
-		then HUD.BatteryLowColor
-		else HUD.BatteryFillColor
+	if battery <= Config.Flashlight.LowBatteryThreshold then
+		-- A dying light goes red AND THROBS the fill's transparency (paired with PlayerSFXController's
+		-- low-battery beep) -- a "your light is dying" tell. Shallow + REDUCE-FLASHING-scaled: a pulse,
+		-- never a strobe (transparency rides 0..depth on a sine, so the fill never fully vanishes).
+		batteryFill.BackgroundColor3 = HUD.BatteryLowColor
+		local depth = flashDepth(HUD.BatteryLowPulseDepth)
+		batteryFill.BackgroundTransparency = depth
+			* (0.5 + 0.5 * math.sin(os.clock() * HUD.BatteryLowPulseHz * math.pi * 2))
+	else
+		batteryFill.BackgroundColor3 = HUD.BatteryFillColor
+		batteryFill.BackgroundTransparency = 0
+	end
 
 	-- Stamina gauge reads the server-authoritative Stamina attribute (SprintService).
 	local stamina = player:GetAttribute(Attributes.Stamina)
@@ -638,6 +703,10 @@ RunService.RenderStepped:Connect(function()
 	arrow.Visible = showArrow
 	arrowLabel.Visible = showArrow
 	if showArrow then
+		-- Gentle scale throb so the run-for-it goal pulls the eye (subtle; not a flash, so unscaled by reduce-flashing).
+		arrowScale.Scale = 1
+			+ HUD.ExitArrowPulseScale * (0.5 + 0.5 * math.sin(os.clock() * HUD.ExitArrowPulseHz * math.pi * 2))
+
 		local character = player.Character
 		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 		local camera = Workspace.CurrentCamera
