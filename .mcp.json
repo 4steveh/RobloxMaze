@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "roblox-studio": {
+      "type": "stdio",
+      "command": "/home/toor/bin/roblox-studio-mcp.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
